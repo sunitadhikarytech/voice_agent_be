@@ -91,6 +91,11 @@ class Settings(BaseSettings):
         default="You are a helpful voice assistant. Answer concisely and conversationally."
     )
 
+    # Cartesia TTS (VA-43). Sonic-class model; key sourced from Secret Manager in VA-14.
+    cartesia_api_key: SecretStr = Field(default=SecretStr(""))
+    cartesia_model: str = Field(default="sonic-2")
+    cartesia_voice_id: str = Field(default="")
+
     # Secret. Optional locally, required in dev/prod (see REQUIRED_IN_CLOUD). Consumed by the
     # auth middleware in VA-15 and sourced from Secret Manager in VA-14.
     jwt_secret_key: SecretStr = Field(default=SecretStr(""))

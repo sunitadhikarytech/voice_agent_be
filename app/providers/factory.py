@@ -33,6 +33,13 @@ def _build_gemini_llm(settings: "Settings") -> LlmProvider:
     return GeminiLlm.from_settings(settings)
 
 
+def _build_cartesia_tts(settings: "Settings") -> TtsProvider:
+    # Lazy import so `websockets` only loads when a Cartesia provider is actually built.
+    from app.providers.cartesia_tts import CartesiaTts
+
+    return CartesiaTts.from_settings(settings)
+
+
 # Constructors receive the app Settings, so adapters can read their model/keys from config.
 _STT: dict[str, Callable[["Settings"], SttProvider]] = {
     "mock": lambda _s: MockStt(),
@@ -42,7 +49,10 @@ _LLM: dict[str, Callable[["Settings"], LlmProvider]] = {
     "mock": lambda _s: MockLlm(),
     "gemini": _build_gemini_llm,
 }
-_TTS: dict[str, Callable[["Settings"], TtsProvider]] = {"mock": lambda _s: MockTts()}
+_TTS: dict[str, Callable[["Settings"], TtsProvider]] = {
+    "mock": lambda _s: MockTts(),
+    "cartesia": _build_cartesia_tts,
+}
 
 
 def register_stt(name: str, ctor: Callable[["Settings"], SttProvider]) -> None:

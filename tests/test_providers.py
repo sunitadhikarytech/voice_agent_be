@@ -81,9 +81,9 @@ def test_make_providers_is_config_driven():
     assert (stt.name, llm.name, tts.name) == ("mock", "mock", "mock")
 
 
-def test_default_providers_are_not_registered_until_their_tickets():
-    # Defaults point at the real providers, which register in VA-31/34/43. Until then the
-    # factory fails loudly rather than silently mis-routing.
+def test_default_providers_resolve_to_real_adapters():
+    # With the adapter tickets landed (VA-31 deepgram, VA-34 gemini, VA-43 cartesia), the
+    # default provider names all resolve to their real adapters.
     settings = Settings(_env_file=None)  # deepgram / gemini / cartesia
-    with pytest.raises(factory.UnknownProvider):
-        factory.make_providers(settings)
+    stt, llm, tts = factory.make_providers(settings)
+    assert (stt.name, llm.name, tts.name) == ("deepgram", "gemini", "cartesia")
