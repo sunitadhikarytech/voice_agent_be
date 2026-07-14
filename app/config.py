@@ -72,6 +72,14 @@ class Settings(BaseSettings):
     log_level: LogLevel = Field(default=LogLevel.INFO)
     api_prefix: str = Field(default="/api/v1")
 
+    # Provider selection (VA-30). Swapping a provider is a config change, not a code change.
+    # These names resolve through app.providers.factory; "mock" is always available and the
+    # real adapters register under these names in VA-31 (deepgram) / VA-34 (gemini) /
+    # VA-43 (cartesia).
+    stt_provider: str = Field(default="deepgram")
+    llm_provider: str = Field(default="gemini")
+    tts_provider: str = Field(default="cartesia")
+
     # Secret. Optional locally, required in dev/prod (see REQUIRED_IN_CLOUD). Consumed by the
     # auth middleware in VA-15 and sourced from Secret Manager in VA-14.
     jwt_secret_key: SecretStr = Field(default=SecretStr(""))
