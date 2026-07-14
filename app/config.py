@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     deepgram_api_key: SecretStr = Field(default=SecretStr(""))
     deepgram_model: str = Field(default="nova-3")
 
+    # Gemini LLM (VA-34). Flash-tier model; key sourced from Secret Manager in VA-14.
+    google_api_key: SecretStr = Field(default=SecretStr(""))
+    gemini_model: str = Field(default="gemini-2.0-flash")
+    gemini_system_prompt: str = Field(
+        default="You are a helpful voice assistant. Answer concisely and conversationally."
+    )
+
     # Secret. Optional locally, required in dev/prod (see REQUIRED_IN_CLOUD). Consumed by the
     # auth middleware in VA-15 and sourced from Secret Manager in VA-14.
     jwt_secret_key: SecretStr = Field(default=SecretStr(""))
