@@ -19,8 +19,18 @@ class UnknownProvider(KeyError):
     """Raised when a configured provider name has no registered constructor."""
 
 
+def _build_deepgram_stt(settings: "Settings") -> SttProvider:
+    # Lazy import so `websockets` only loads when a Deepgram provider is actually built.
+    from app.providers.deepgram_stt import DeepgramStt
+
+    return DeepgramStt.from_settings(settings)
+
+
 # Constructors receive the app Settings, so adapters can read their model/keys from config.
-_STT: dict[str, Callable[["Settings"], SttProvider]] = {"mock": lambda _s: MockStt()}
+_STT: dict[str, Callable[["Settings"], SttProvider]] = {
+    "mock": lambda _s: MockStt(),
+    "deepgram": _build_deepgram_stt,
+}
 _LLM: dict[str, Callable[["Settings"], LlmProvider]] = {"mock": lambda _s: MockLlm()}
 _TTS: dict[str, Callable[["Settings"], TtsProvider]] = {"mock": lambda _s: MockTts()}
 
