@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     llm_provider: str = Field(default="gemini")
     tts_provider: str = Field(default="cartesia")
 
+    # Deepgram STT (VA-31). Key optional locally; sourced from Secret Manager in VA-14.
+    deepgram_api_key: SecretStr = Field(default=SecretStr(""))
+    deepgram_model: str = Field(default="nova-3")
+
     # Secret. Optional locally, required in dev/prod (see REQUIRED_IN_CLOUD). Consumed by the
     # auth middleware in VA-15 and sourced from Secret Manager in VA-14.
     jwt_secret_key: SecretStr = Field(default=SecretStr(""))
