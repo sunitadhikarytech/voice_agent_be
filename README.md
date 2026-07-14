@@ -54,6 +54,20 @@ pytest
 Copy `.env.example` to `.env` for local configuration. **Never commit real secrets** —
 `.env` is gitignored and secrets move to a secret manager in a later ticket.
 
+## Run with Docker
+
+A multi-stage, slim image (`python:3.12-slim`, non-root) runs the same locally, in CI, and
+on Cloud Run — which injects `$PORT` at runtime.
+
+```bash
+docker build -t voice-ai-agent .
+docker run --rm -p 8080:8080 -e PORT=8080 voice-ai-agent
+# -> http://127.0.0.1:8080/healthz  ->  {"ok": true}
+```
+
+The image is built on every PR by `.github/workflows/docker-image.yml`, so a broken
+Dockerfile blocks merge.
+
 ## Working agreement
 
 - **One branch per ticket**, named `<owner>/<ticket>` — e.g. `Shiva/va-01`.
