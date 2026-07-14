@@ -15,6 +15,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 
 from app.config import LogLevel, Settings, get_settings
+from app.streaming.contract import router as contract_router
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -66,6 +67,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def config(settings: SettingsDep) -> dict[str, object]:
         """Log-safe view of the effective configuration (secrets redacted)."""
         return settings.public_dict()
+
+    # Shared voice-turn + SSE contract (VA-20). The real voice endpoints arrive in VA-24..27.
+    app.include_router(
+        contract_router, prefix=f"{app_settings.api_prefix}/contract", tags=["contract"]
+    )
 
     return app
 
