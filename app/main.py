@@ -15,6 +15,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 
 from app.config import LogLevel, Settings, get_settings
+from app.errors import ERROR_RESPONSES, install_error_handling
 from app.streaming.contract import router as contract_router
 
 
@@ -50,6 +51,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = app_settings
 
+    # Consistent problem-shaped errors + correlation ids on every response (VA-28).
+    install_error_handling(app)
+
     @app.get("/healthz", tags=["ops"])
     def healthz() -> dict[str, bool]:
         """Dependency-free liveness/readiness probe.
@@ -70,7 +74,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Shared voice-turn + SSE contract (VA-20). The real voice endpoints arrive in VA-24..27.
     app.include_router(
-        contract_router, prefix=f"{app_settings.api_prefix}/contract", tags=["contract"]
+        contract_router,
+        prefix=f"{app_settings.api_prefix}/contract",
+        tags=["contract"],
+        responses=ERROR_RESPONSES,
     )
 
     return app
