@@ -1,27 +1,35 @@
-"""Pipeline interface.
+"""Pipeline base class.
 
 A pipeline turns caller input (audio/text) into a spoken/text reply. Both the traditional
-(STT→LLM→TTS) and realtime (voice-to-voice) pipelines implement this contract so the
-dispatch core can treat them uniformly. VA-01 defines the contract; the traditional
-pipeline is wired in VA-45 and the realtime pipeline in VA-48.
+(STT→LLM→TTS) and realtime (voice-to-voice) pipelines extend this base so the dispatch core
+(VA-21) can treat them uniformly — it satisfies the structural ``dispatch.Pipeline`` protocol.
+The traditional pipeline is wired in VA-45 and the realtime pipeline in VA-48.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
+
+from app.dispatch import Architecture
+from app.streaming.events import AnySSEEvent
+from app.streaming.schemas import VoiceTurnRequest, VoiceTurnResult
 
 
-class Pipeline(ABC):
-    """Base class every voice pipeline implements."""
+class BasePipeline(ABC):
+    """Base class every voice pipeline implements.
 
-    name: str = "pipeline"
+    Subclasses set ``architecture`` and implement ``run`` (complete delivery) and ``stream``
+    (streaming delivery).
+    """
+
+    architecture: Architecture
 
     @abstractmethod
-    async def run(self, request: Any) -> Any:
+    async def run(self, request: VoiceTurnRequest) -> VoiceTurnResult:
         """Process a full turn and return a complete result."""
         raise NotImplementedError
 
     @abstractmethod
-    async def stream(self, request: Any) -> AsyncIterator[Any]:
-        """Process a turn and yield events as they are produced."""
+    def stream(self, request: VoiceTurnRequest) -> AsyncIterator[AnySSEEvent]:
+        """Process a turn and yield SSE events as they are produced."""
         raise NotImplementedError

@@ -50,3 +50,21 @@ class VoiceTurnRequest(BaseModel):
         description="Conversation/session id for continuity; omit to start a new session.",
     )
     input: VoiceInput
+
+
+class VoiceTurnResult(BaseModel):
+    """The complete (non-streaming) result of a voice turn.
+
+    Returned by the ``complete`` delivery mode (the `/voice/complete` endpoint, VA-26) and by
+    the dispatch core (VA-21). Streaming delivery emits the SSE events in ``app.streaming.events``
+    instead.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str | None = None
+    transcript: str = Field(description="Final transcript of the user's utterance.")
+    answer_text: str = Field(description="The agent's answer as text.")
+    audio_url: str | None = Field(default=None, description="URL/handle for the spoken answer, if any.")
+    tools_called: list[str] = Field(default_factory=list)
+    latency_ms: dict[str, float] = Field(default_factory=dict, description="Per-stage latency.")
