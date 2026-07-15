@@ -82,6 +82,12 @@ tests and the evaluation harness use by default).
 | --- | --- | --- |
 | `JWT_SECRET_KEY` | *(empty)* | **Secret. Required in `dev`/`prod`** (see below); optional in `local` |
 
+## CORS (VA-16)
+
+| Env var | Default | Notes |
+| --- | --- | --- |
+| `ALLOWED_ORIGINS` | *(empty)* | Comma-separated origins allowed to call the API from a browser (e.g. `https://app.example.com,https://staging.example.com`). Empty ⇒ **no cross-origin access** — the deny-by-default posture. Origins must include their scheme; wildcards are rejected at startup. The `/ui` dashboard is served same-origin and needs no entry |
+
 ## Required outside `local`
 
 When `ENVIRONMENT` is `dev` or `prod`, the keys in `REQUIRED_IN_CLOUD` must be set or the
@@ -94,7 +100,7 @@ change. Locally, missing secrets simply disable the features that need them.
 ```bash
 curl http://localhost:8080/api/v1/config
 # {"app_name":"voice-ai-agent","environment":"local","port":8080,"log_level":"INFO",
-#  "api_prefix":"/api/v1","jwt_secret_key_configured":false}
+#  "api_prefix":"/api/v1","jwt_secret_key_configured":false,"allowed_origins":[]}
 ```
 
 Secret **values** are never returned — only a configured/not-configured boolean.

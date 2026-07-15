@@ -13,6 +13,7 @@ import os
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.voice import router as voice_router
@@ -77,6 +78,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Consistent problem-shaped errors + correlation ids on every response (VA-28).
     install_error_handling(app)
+
+    # CORS lockdown (VA-16): browsers may call the API cross-origin only from the origins
+    # configured in ALLOWED_ORIGINS. The default (empty) adds no CORS headers at all, so
+    # cross-origin browser access is denied; the reference dashboard is same-origin at /ui.
+    # Added after error handling so it is the outermost layer and error responses carry the
+    # CORS headers an allowed browser client needs to read them.
+    if app_settings.allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=app_settings.allowed_origins,
+            allow_credentials=False,  # bearer tokens travel in headers, never cookies
+            allow_methods=["GET", "POST"],
+            allow_headers=["authorization", "content-type"],
+            max_age=600,
+        )
 
     @app.get("/healthz", tags=["ops"])
     def healthz() -> dict[str, bool]:

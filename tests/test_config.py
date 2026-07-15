@@ -109,6 +109,7 @@ def test_public_dict_redacts_secret_but_reports_presence():
         "log_level",
         "api_prefix",
         "jwt_secret_key_configured",
+        "allowed_origins",  # VA-16 — origins are configuration, not a secret
     }
 
     with_secret = build(jwt_secret_key="topsecret").public_dict()

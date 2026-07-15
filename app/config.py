@@ -20,10 +20,10 @@ from __future__ import annotations
 
 from enum import Enum
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Environment(str, Enum):
@@ -119,6 +119,12 @@ class Settings(BaseSettings):
     # auth middleware in VA-15 and sourced from Secret Manager in VA-14.
     jwt_secret_key: SecretStr = Field(default=SecretStr(""))
 
+    # CORS lockdown (VA-16). Comma-separated origins allowed to call the API from a browser
+    # (e.g. "https://app.example.com,https://staging.example.com"). Empty — the default —
+    # means no cross-origin access at all; the reference dashboard is served same-origin at
+    # /ui and needs no entry. Wildcards are rejected: the lockdown is to *known* origins.
+    allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
     # --- normalisation so env values are forgiving about case ---
     @field_validator("environment", mode="before")
     @classmethod
@@ -135,6 +141,28 @@ class Settings(BaseSettings):
     def _clean_api_prefix(cls, v: str) -> str:
         v = "/" + v.strip().strip("/")
         return v.rstrip("/") or "/"
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, v: Any) -> Any:
+        """Accept the natural env form — a comma-separated string — as well as a list."""
+        if isinstance(v, str):
+            return [part for part in (piece.strip() for piece in v.split(",")) if part]
+        return v
+
+    @field_validator("allowed_origins")
+    @classmethod
+    def _validate_origins(cls, v: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for origin in v:
+            if "*" in origin:
+                raise ValueError(
+                    "wildcard origins are not allowed — list each known origin explicitly"
+                )
+            if not origin.startswith(("http://", "https://")):
+                raise ValueError(f"origin must include its scheme (http/https): {origin!r}")
+            cleaned.append(origin.rstrip("/"))
+        return cleaned
 
     @model_validator(mode="after")
     def _require_secrets_outside_local(self) -> "Settings":
@@ -161,6 +189,7 @@ class Settings(BaseSettings):
             "log_level": self.log_level.value,
             "api_prefix": self.api_prefix,
             "jwt_secret_key_configured": _is_set(self.jwt_secret_key),
+            "allowed_origins": list(self.allowed_origins),
         }
 
 
