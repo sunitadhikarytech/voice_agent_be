@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, Request
 from app.config import LogLevel, Settings, get_settings
 from app.context import load_document
 from app.errors import ERROR_RESPONSES, install_error_handling
+from app.session import SessionStore
 from app.streaming.contract import router as contract_router
 
 
@@ -55,6 +56,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Load the full-document context once at startup (VA-35). A configured-but-missing or
     # oversized document fails fast here rather than mid-turn; None when grounding is off.
     app.state.document = load_document(app_settings)
+
+    # Per-conversation state, tenant-scoped and keyed by session id (VA-40).
+    app.state.session_store = SessionStore()
 
     # Consistent problem-shaped errors + correlation ids on every response (VA-28).
     install_error_handling(app)
