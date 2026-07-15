@@ -2,9 +2,14 @@
 
 Streams audio to Deepgram's realtime WebSocket (Nova-3) and yields :class:`TranscriptChunk`s
 — interim results, stabilized finals, and an end-of-turn flag at a pause (Deepgram's
-``speech_final`` / ``UtteranceEnd``, the signal VA-32 uses for reply timing). A dropped
-connection is transparently reconnected (bounded retries) and the stream continues with the
-remaining audio.
+``speech_final`` / ``UtteranceEnd``, the signal VA-32 uses for reply timing).
+
+Reconnect design (VA-31 follow-up): the source audio generator is pumped by ONE long-lived
+task into a bounded queue, and each session's sender drains the queue. Per-session teardown
+therefore never cancels the source generator itself, so after a dropped socket the remaining
+audio flows into the next session instead of being lost (cancelling a task parked in
+``audio.__anext__()`` would otherwise finalize the shared generator). Bounded retries back
+off between attempts.
 
 The transport is injectable (``connect``) so the adapter is fully testable without a socket;
 the default opens a real ``websockets`` connection.
@@ -22,6 +27,12 @@ from app.providers.base import TranscriptChunk
 logger = logging.getLogger("app.providers.deepgram")
 
 DEFAULT_URL = "wss://api.deepgram.com/v1/listen"
+
+# Bounded audio buffer between the single source pump and the per-session sender.
+QUEUE_MAXSIZE = 64
+
+# End-of-stream marker for the pump -> sender queue.
+_EOS = object()
 
 
 class Connection(Protocol):
@@ -119,50 +130,107 @@ class DeepgramStt:
         )
 
     async def transcribe(self, audio: AsyncIterator[bytes]) -> AsyncIterator[TranscriptChunk]:
-        audio_iter = audio.__aiter__()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
+        pump = asyncio.create_task(self._pump(audio, queue))
         attempts = 0
-        while True:
-            try:
-                conn = await self._connect()
-            except _RECOVERABLE as exc:
-                attempts += 1
-                if attempts > self._max_reconnects:
-                    raise SttConnectionError("could not connect to Deepgram") from exc
-                await asyncio.sleep(self._backoff_base * attempts)
-                continue
+        try:
+            while True:
+                try:
+                    conn = await self._connect()
+                except _RECOVERABLE as exc:
+                    attempts += 1
+                    if attempts > self._max_reconnects:
+                        raise SttConnectionError("could not connect to Deepgram") from exc
+                    await asyncio.sleep(self._backoff_base * attempts)
+                    continue
 
-            try:
-                async for chunk in self._run(conn, audio_iter):
-                    yield chunk
-                return  # audio exhausted and stream finished cleanly
-            except _RECOVERABLE as exc:
-                attempts += 1
-                logger.warning("Deepgram stream dropped (attempt %d): %s", attempts, exc)
-                if attempts > self._max_reconnects:
-                    raise SttConnectionError("Deepgram stream failed") from exc
-                await asyncio.sleep(self._backoff_base * attempts)
-                # loop and reconnect, continuing with the remaining audio
-            finally:
-                with contextlib.suppress(Exception):
-                    await conn.close()
+                try:
+                    async for chunk in self._run(conn, queue):
+                        yield chunk
+                    return  # audio exhausted and stream finished cleanly
+                except _RECOVERABLE as exc:
+                    attempts += 1
+                    logger.warning("Deepgram stream dropped (attempt %d): %s", attempts, exc)
+                    if attempts > self._max_reconnects:
+                        raise SttConnectionError("Deepgram stream failed") from exc
+                    await asyncio.sleep(self._backoff_base * attempts)
+                    # loop and reconnect, continuing with the remaining audio
+                finally:
+                    with contextlib.suppress(Exception):
+                        await conn.close()
+        finally:
+            pump.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump
+
+    async def _pump(self, audio: AsyncIterator[bytes], queue: asyncio.Queue) -> None:
+        """Single long-lived reader of the source audio generator. Only cancelled when
+        ``transcribe()`` itself tears down, so per-session sender cancellation never touches
+        the shared generator (cancelling a task parked in ``__anext__`` would finalize it)."""
+        try:
+            async for chunk in audio:
+                await queue.put(chunk)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # surface source errors to the sender instead of hanging
+            await queue.put(exc)
+            return
+        await queue.put(_EOS)
 
     async def _run(
-        self, conn: Connection, audio_iter: AsyncIterator[bytes]
+        self, conn: Connection, queue: asyncio.Queue
     ) -> AsyncIterator[TranscriptChunk]:
-        sender = asyncio.create_task(self._send_audio(conn, audio_iter))
+        """One session: send queued audio while receiving transcripts. A sender failure is
+        surfaced promptly (via asyncio.wait) even while the receive side is blocked."""
+        sender = asyncio.create_task(self._send_audio(conn, queue))
+        recv = conn.__aiter__()
+        next_msg: asyncio.Future | None = None
         try:
-            async for message in conn:
-                for chunk in parse_message(message):
-                    yield chunk
-            await sender  # audio fully sent; surface any sender error
+            while True:
+                if next_msg is None:
+                    next_msg = asyncio.ensure_future(recv.__anext__())
+                wait_for: set[asyncio.Future] = {next_msg}
+                if not sender.done():
+                    wait_for.add(sender)
+                done, _ = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
+                if sender in done and not sender.cancelled():
+                    sender_exc = sender.exception()
+                    if sender_exc is not None:
+                        raise sender_exc
+                if next_msg in done:
+                    try:
+                        message = next_msg.result()
+                    except StopAsyncIteration:
+                        break
+                    finally:
+                        next_msg = None
+                    for chunk in parse_message(message):
+                        yield chunk
         finally:
+            if next_msg is not None:
+                next_msg.cancel()
+                # CancelledError is a BaseException: suppress it explicitly so cleanup never
+                # clobbers an in-flight (recoverable) stream error.
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await next_msg
             if not sender.done():
                 sender.cancel()
             with contextlib.suppress(asyncio.CancelledError, *_RECOVERABLE):
                 await sender
 
-    async def _send_audio(self, conn: Connection, audio_iter: AsyncIterator[bytes]) -> None:
-        async for data in audio_iter:
-            await conn.send(data)
-        # Tell Deepgram the audio is done so it flushes any pending finals.
-        await conn.send(json.dumps({"type": "CloseStream"}))
+    async def _send_audio(self, conn: Connection, queue: asyncio.Queue) -> None:
+        """Drain the shared queue into this session's socket. On end-of-stream, tell Deepgram
+        the audio is done (``CloseStream``) so it flushes pending finals; the marker is left in
+        the queue so a post-reconnect sender re-sends it on the recovered socket."""
+        while True:
+            item = await queue.get()
+            if item is _EOS:
+                # Re-mark for any post-reconnect sender before sending (the pump has finished,
+                # so the slot freed by get() guarantees put_nowait cannot be full here).
+                queue.put_nowait(_EOS)
+                await conn.send(json.dumps({"type": "CloseStream"}))
+                return
+            if isinstance(item, Exception):
+                queue.put_nowait(item)  # re-mark for future senders, then surface
+                raise item
+            await conn.send(item)
