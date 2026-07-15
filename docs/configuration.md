@@ -49,6 +49,8 @@ tests and the evaluation harness use by default).
 | --- | --- | --- |
 | `ELEVENLABS_API_KEY` | *(empty)* | **Secret.** Required only when an `elevenlabs` provider is selected |
 | `ELEVENLABS_STT_MODEL` | `scribe_v2_realtime` | Realtime Scribe model for `STT_PROVIDER=elevenlabs` |
+| `ELEVENLABS_TTS_MODEL` | `eleven_flash_v2_5` | Streaming TTS model for `TTS_PROVIDER=elevenlabs` |
+| `ELEVENLABS_VOICE_ID` | *(empty)* | Voice id for ElevenLabs synthesis (PCM 24 kHz output) |
 
 ## Gemini LLM (VA-34 / VA-36)
 
