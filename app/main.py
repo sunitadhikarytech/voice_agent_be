@@ -17,7 +17,7 @@ from app.api.voice import router as voice_router
 from app.config import Settings, get_settings
 from app.context import load_document
 from app.errors import ERROR_RESPONSES, install_error_handling
-from app.observability import configure_logging
+from app.observability import LatencyMetrics, configure_logging
 from app.pipelines.factory import build_pipeline_registry
 from app.session import SessionStore
 from app.streaming.contract import router as contract_router
@@ -57,9 +57,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Per-conversation state, tenant-scoped and keyed by session id (VA-40).
     app.state.session_store = SessionStore()
 
+    # Per-path latency metrics (VA-58), fed by the pipelines.
+    app.state.metrics = LatencyMetrics()
+
     # Traditional + realtime pipelines, registered by architecture for dispatch (VA-45/48).
     app.state.pipelines = build_pipeline_registry(
-        app_settings, document=app.state.document, session_store=app.state.session_store
+        app_settings,
+        document=app.state.document,
+        session_store=app.state.session_store,
+        metrics=app.state.metrics,
     )
 
     # Consistent problem-shaped errors + correlation ids on every response (VA-28).
@@ -82,6 +88,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def config(settings: SettingsDep) -> dict[str, object]:
         """Log-safe view of the effective configuration (secrets redacted)."""
         return settings.public_dict()
+
+    @app.get(f"{app_settings.api_prefix}/metrics", tags=["ops"])
+    def metrics(request: Request) -> dict[str, object]:
+        """Per-path latency aggregates (p50/p95) — fast-vs-slow comparable (VA-58)."""
+        return request.app.state.metrics.summary()
 
     # Shared voice-turn + SSE contract (VA-20).
     app.include_router(
