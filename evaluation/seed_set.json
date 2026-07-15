@@ -1,0 +1,38 @@
+[
+  {
+    "id": "art21-life-liberty",
+    "question": "What does Article 21 of the Constitution guarantee?",
+    "expected_keywords": ["life", "personal liberty"],
+    "note": "Protection of life and personal liberty."
+  },
+  {
+    "id": "art14-equality",
+    "question": "What does Article 14 provide?",
+    "expected_keywords": ["equality"],
+    "note": "Equality before the law and equal protection of the laws."
+  },
+  {
+    "id": "art19-freedoms",
+    "question": "Which freedoms does Article 19 protect?",
+    "expected_keywords": ["speech", "expression"],
+    "note": "Protection of certain rights regarding freedom of speech, etc."
+  },
+  {
+    "id": "preamble-character",
+    "question": "How does the Preamble describe the Indian state?",
+    "expected_keywords": ["sovereign", "democratic", "republic"],
+    "note": "A sovereign, socialist, secular, democratic republic."
+  },
+  {
+    "id": "art32-remedies",
+    "question": "What right does Article 32 confer?",
+    "expected_keywords": ["remedies", "writ"],
+    "note": "Right to constitutional remedies; power to issue writs."
+  },
+  {
+    "id": "art51a-duties",
+    "question": "What does Article 51A set out?",
+    "expected_keywords": ["fundamental duties"],
+    "note": "The fundamental duties of citizens."
+  }
+]
