@@ -9,6 +9,7 @@ from app.observability.logging import (
     tenant_id_var,
 )
 from app.observability.metrics import LatencyMetrics, percentile
+from app.observability.usage import UsageMetrics, audio_seconds
 
 __all__ = [
     "JsonFormatter",
@@ -20,4 +21,6 @@ __all__ = [
     "tenant_id_var",
     "LatencyMetrics",
     "percentile",
+    "UsageMetrics",
+    "audio_seconds",
 ]

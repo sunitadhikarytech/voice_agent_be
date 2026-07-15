@@ -16,7 +16,7 @@ import time
 from typing import AsyncIterator, Callable
 
 from app.dispatch import Architecture
-from app.observability import LatencyMetrics, bind_log_context
+from app.observability import LatencyMetrics, UsageMetrics, audio_seconds, bind_log_context
 from app.pipelines.base import BasePipeline
 from app.providers.base import RealtimeProvider
 from app.session import SessionStore, TurnState, TurnStateMachine
@@ -37,6 +37,7 @@ class RealtimePipeline(BasePipeline):
         *,
         session_store: SessionStore | None = None,
         metrics: LatencyMetrics | None = None,
+        usage: UsageMetrics | None = None,
         state_factory: Callable[[], TurnStateMachine] = TurnStateMachine,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -45,6 +46,7 @@ class RealtimePipeline(BasePipeline):
         # None check so an injected (empty) store isn't silently replaced.
         self._sessions = session_store if session_store is not None else SessionStore()
         self._metrics = metrics
+        self._usage = usage
         self._state_factory = state_factory
         self._clock = clock
 
@@ -60,13 +62,16 @@ class RealtimePipeline(BasePipeline):
         state.transition(TurnState.LISTENING)
         state.transition(TurnState.THINKING)
 
-        audio_in = _audio_stream(base64.b64decode(request.input.audio_b64))
+        input_bytes = base64.b64decode(request.input.audio_b64)
+        audio_in = _audio_stream(input_bytes)
         seq = 0
         first_audio: float | None = None
+        output_audio_bytes = 0
         async for audio in self._realtime.converse(audio_in):
             if first_audio is None:
                 first_audio = self._elapsed_ms(started)
                 state.transition(TurnState.SPEAKING)
+            output_audio_bytes += len(audio)
             yield AudioChunk(audio_b64=base64.b64encode(audio).decode("ascii"), seq=seq)
             seq += 1
 
@@ -74,6 +79,10 @@ class RealtimePipeline(BasePipeline):
         latency = {"first_audio_ms": first_audio} if first_audio is not None else {}
         if self._metrics is not None:
             self._metrics.record(self.architecture.value, latency)
+        if self._usage is not None:
+            seconds = audio_seconds(len(input_bytes)) + audio_seconds(output_audio_bytes)
+            self._usage.record(self.architecture.value, tenant, audio_seconds=seconds)
+            logger.info("usage", extra={"path": self.architecture.value, "audio_seconds": seconds})
         logger.info("realtime turn complete", extra={"latency_ms": latency})
         yield Done(session_id=session.session_id, latency_ms=latency)
 

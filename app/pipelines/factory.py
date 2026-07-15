@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from app.context.loader import DocumentContext
 from app.dispatch import PipelineRegistry
-from app.observability import LatencyMetrics
+from app.observability import LatencyMetrics, UsageMetrics
 from app.pipelines.realtime import RealtimePipeline
 from app.pipelines.traditional import TraditionalPipeline
 from app.providers.factory import get_realtime, make_providers
@@ -24,6 +24,7 @@ def build_pipeline_registry(
     tools: ToolRegistry | None = None,
     session_store: SessionStore | None = None,
     metrics: LatencyMetrics | None = None,
+    usage: UsageMetrics | None = None,
 ) -> PipelineRegistry:
     """Build and register the traditional + realtime pipelines for ``settings``."""
     session_store = session_store if session_store is not None else SessionStore()
@@ -38,8 +39,10 @@ def build_pipeline_registry(
         TraditionalPipeline(
             stt, llm, tts,
             session_store=session_store, memory=memory, tools=tools, document=document,
-            metrics=metrics,
+            metrics=metrics, usage=usage,
         )
     )
-    registry.register(RealtimePipeline(realtime, session_store=session_store, metrics=metrics))
+    registry.register(
+        RealtimePipeline(realtime, session_store=session_store, metrics=metrics, usage=usage)
+    )
     return registry
