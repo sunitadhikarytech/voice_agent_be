@@ -44,7 +44,7 @@ def test_env_overrides_are_read_and_case_insensitive(monkeypatch):
     monkeypatch.setenv("PORT", "9000")
     monkeypatch.setenv("ENVIRONMENT", "DEV")   # upper-case accepted
     monkeypatch.setenv("LOG_LEVEL", "debug")   # lower-case accepted
-    monkeypatch.setenv("JWT_SECRET_KEY", "s3cret")  # required in dev
+    monkeypatch.setenv("JWT_SECRET_KEY", "s3cret-0123456789abcdef-0123456789abcdef")  # required in dev; ≥32 bytes
     s = load_settings(_env_file=None)
     assert s.port == 9000
     assert s.environment is Environment.DEV
@@ -82,7 +82,7 @@ def test_missing_required_secret_in_prod_fails_fast():
 
 
 def test_prod_with_required_secret_loads():
-    s = build(environment="prod", jwt_secret_key="s3cret")
+    s = build(environment="prod", jwt_secret_key="topsecret-0123456789abcdef-0123456789abcdef")
     assert s.environment is Environment.PROD
 
 
@@ -94,9 +94,9 @@ def test_local_does_not_require_secret():
 # --- secret safety ----------------------------------------------------------------------
 
 def test_secret_never_leaks_in_repr_or_str():
-    s = build(jwt_secret_key="topsecret")
-    assert "topsecret" not in repr(s)
-    assert "topsecret" not in str(s)
+    s = build(jwt_secret_key="topsecret-0123456789abcdef-0123456789abcdef")
+    assert "topsecret-0123456789abcdef-0123456789abcdef" not in repr(s)
+    assert "topsecret-0123456789abcdef-0123456789abcdef" not in str(s)
 
 
 def test_public_dict_redacts_secret_but_reports_presence():
@@ -109,12 +109,13 @@ def test_public_dict_redacts_secret_but_reports_presence():
         "log_level",
         "api_prefix",
         "jwt_secret_key_configured",
+        "auth_enabled",  # VA-15 — derived: the secret being set enables auth
         "allowed_origins",  # VA-16 — origins are configuration, not a secret
     }
 
-    with_secret = build(jwt_secret_key="topsecret").public_dict()
+    with_secret = build(jwt_secret_key="topsecret-0123456789abcdef-0123456789abcdef").public_dict()
     assert with_secret["jwt_secret_key_configured"] is True
-    assert "topsecret" not in str(with_secret)
+    assert "topsecret-0123456789abcdef-0123456789abcdef" not in str(with_secret)
 
 
 # --- caching ----------------------------------------------------------------------------

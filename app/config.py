@@ -142,6 +142,20 @@ class Settings(BaseSettings):
         v = "/" + v.strip().strip("/")
         return v.rstrip("/") or "/"
 
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def _jwt_secret_strength(cls, v: SecretStr) -> SecretStr:
+        """When a signing key is set it must be usable for HS256: RFC 7518 §3.2 requires a
+        key of at least the hash size (256 bits). A short key is a brute-forceable one, so
+        fail fast rather than run with weak auth."""
+        secret = v.get_secret_value()
+        if secret and len(secret.encode()) < 32:
+            raise ValueError(
+                "jwt_secret_key must be at least 32 bytes for HS256 (RFC 7518 §3.2); "
+                "generate one with: openssl rand -hex 32"
+            )
+        return v
+
     @field_validator("allowed_origins", mode="before")
     @classmethod
     def _split_origins(cls, v: Any) -> Any:
@@ -189,6 +203,8 @@ class Settings(BaseSettings):
             "log_level": self.log_level.value,
             "api_prefix": self.api_prefix,
             "jwt_secret_key_configured": _is_set(self.jwt_secret_key),
+            # setting the key is what enables bearer-JWT auth (VA-15)
+            "auth_enabled": _is_set(self.jwt_secret_key),
             "allowed_origins": list(self.allowed_origins),
         }
 

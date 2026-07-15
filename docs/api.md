@@ -8,6 +8,7 @@ the top level.
 Interactive docs are always available: **Swagger UI at `/docs`**, the raw schema at
 `/openapi.json`.
 
+- [Authentication](#authentication)
 - [Voice endpoints](#voice-endpoints)
 - [Request body](#request-body)
 - [Streaming responses (SSE)](#streaming-responses-sse)
@@ -15,6 +16,32 @@ Interactive docs are always available: **Swagger UI at `/docs`**, the raw schema
 - [Contract endpoints](#contract-endpoints)
 - [Operations endpoints](#operations-endpoints)
 - [Errors](#errors)
+
+---
+
+## Authentication
+
+Bearer-JWT auth (VA-15) is **enabled when `JWT_SECRET_KEY` is configured** — always the case
+in `dev`/`prod`, optional locally. When on, every request under the API prefix requires:
+
+```
+Authorization: Bearer <jwt>
+```
+
+The token must be **HS256**-signed with the shared secret and carry three claims: `sub`
+(caller identity), `tenant` (scopes sessions and usage metering), and `exp`. Anything else —
+a missing/expired/badly-signed token, a missing claim, or a non-HS256 algorithm — returns a
+problem-shaped **`401`** with a `WWW-Authenticate: Bearer` header.
+
+`/healthz`, `/`, the docs (`/docs`, `/openapi.json`), and the `/ui` dashboard stay public.
+
+```python
+import jwt, time
+token = jwt.encode(
+    {"sub": "client-1", "tenant": "acme", "exp": int(time.time()) + 3600},
+    SECRET, algorithm="HS256",
+)
+```
 
 ---
 

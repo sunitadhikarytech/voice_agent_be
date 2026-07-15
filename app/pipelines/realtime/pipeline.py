@@ -15,6 +15,7 @@ import logging
 import time
 from typing import AsyncIterator, Callable
 
+from app.auth import current_tenant
 from app.dispatch import Architecture
 from app.observability import (
     EventCounters,
@@ -129,8 +130,10 @@ class RealtimePipeline(BasePipeline):
 
 
 def _tenant_of(request: VoiceTurnRequest) -> str:
-    # The auth middleware (VA-15) attaches the validated tenant; default until then.
-    return "default"
+    # The validated tenant claim from the auth middleware (VA-15); "default" when auth is
+    # off (local, no JWT_SECRET_KEY). Propagated via contextvar because pipelines only see
+    # the body model, never the HTTP request.
+    return current_tenant()
 
 
 async def _audio_stream(audio: bytes) -> AsyncIterator[bytes]:

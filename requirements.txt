@@ -6,3 +6,4 @@ pydantic-settings>=2.3
 websockets>=12
 google-genai>=1.0
 pypdf>=4
+PyJWT>=2.8
