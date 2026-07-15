@@ -4,6 +4,10 @@ Every log line is a JSON object carrying the correlation id (per request, from V
 middleware) and the session/tenant ids (per turn, from the pipelines), so a turn is traceable
 end to end. Context is propagated with ``contextvars`` — set once at the boundary, and every
 downstream log line across STT/LLM/TTS picks it up automatically.
+
+PII safety (VA-18): every rendered line passes through :mod:`app.observability.pii` — the
+message, extras (recursively), and exception text are scrubbed of conversation content,
+personal data, and credential shapes before they reach stdout.
 """
 from __future__ import annotations
 
@@ -12,6 +16,8 @@ import logging
 import sys
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
+
+from app.observability.pii import scrub, scrub_text
 
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 session_id_var: ContextVar[str | None] = ContextVar("session_id", default=None)
@@ -30,14 +36,19 @@ _JSON_HANDLER_FLAG = "_va_json_handler"
 
 
 class JsonFormatter(logging.Formatter):
-    """Render a log record as a single JSON line, including any bound context + extras."""
+    """Render a log record as a single JSON line, including any bound context + extras.
+
+    PII-safe (VA-18): the message, every extra (recursively), and exception text are
+    scrubbed before rendering. The envelope fields (``ts``/``level``/``logger``) and the
+    bound context ids are operational values set by our own code and pass through as-is.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, object] = {
             "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": scrub_text(record.getMessage()),
         }
         for key, var in _CONTEXT.items():
             value = var.get()
@@ -46,9 +57,9 @@ class JsonFormatter(logging.Formatter):
         # structured extras passed via logger.info(..., extra={...})
         for key, value in record.__dict__.items():
             if key not in _RESERVED and key not in payload:
-                payload[key] = value
+                payload[key] = scrub(value, key=key)
         if record.exc_info:
-            payload["exc"] = self.formatException(record.exc_info)
+            payload["exc"] = scrub_text(self.formatException(record.exc_info))
         return json.dumps(payload, default=str)
 
 
