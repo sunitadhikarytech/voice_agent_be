@@ -58,7 +58,9 @@ class TraditionalPipeline(BasePipeline):
         self._stt = stt
         self._llm = llm
         self._tts = tts
-        self._sessions = session_store or SessionStore()
+        # NB: SessionStore defines __len__, so an empty store is falsy — use an explicit
+        # None check so an injected (empty) store isn't silently replaced.
+        self._sessions = session_store if session_store is not None else SessionStore()
         self._memory = memory or ConversationMemory()
         self._state_factory = state_factory
         self._clock = clock
