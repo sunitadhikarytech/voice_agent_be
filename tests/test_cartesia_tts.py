@@ -47,7 +47,12 @@ async def _collect(agen):
 
 
 def _sent_transcripts(conn: FakeConn) -> list[str]:
-    return [json.loads(s)["transcript"] for s in conn.sent if isinstance(s, str)]
+    # every non-final frame is a spoken transcript; the empty finalizer closes the context
+    return [
+        json.loads(s)["transcript"]
+        for s in conn.sent
+        if isinstance(s, str) and json.loads(s)["continue"]
+    ]
 
 
 # --- helpers ----------------------------------------------------------------------------
@@ -106,3 +111,66 @@ def _connect(conn):
         return conn
 
     return _c
+
+
+# --- context protocol + error frames (VA-43 follow-up, found live) -------------------------------
+
+def test_every_frame_carries_the_same_context_id_and_a_finalizer():
+    conn = FakeConn([b"AAAA"])
+    tts = CartesiaTts(api_key="k", voice_id="v", connect=_connect(conn))
+    asyncio.run(_collect(tts.synthesize(_aiter(["One. ", "Two. ", "tail"]))))
+
+    frames = [json.loads(s) for s in conn.sent]
+    context_ids = {f["context_id"] for f in frames}
+    assert len(context_ids) == 1 and next(iter(context_ids))  # one non-empty context per turn
+    assert [f["continue"] for f in frames] == [True, True, True, False]
+    assert frames[-1]["transcript"] == ""  # the empty finalizer closes the context
+
+
+def test_each_turn_gets_its_own_context():
+    tts_ids = []
+    for _ in range(2):
+        conn = FakeConn([b"AAAA"])
+        tts = CartesiaTts(api_key="k", voice_id="v", connect=_connect(conn))
+        asyncio.run(_collect(tts.synthesize(_aiter(["Hi."]))))
+        tts_ids.append(json.loads(conn.sent[0])["context_id"])
+    assert tts_ids[0] != tts_ids[1]
+
+
+def test_error_frame_raises_instead_of_hanging():
+    import pytest
+
+    from app.providers.cartesia_tts import TtsError
+
+    class ErrorConn(FakeConn):
+        def __init__(self):
+            super().__init__([])
+            # server rejects the context and then goes silent — must raise, not hang
+            self._messages = [
+                json.dumps({"type": "error", "status_code": 400, "done": True,
+                            "error": "context_id is invalid"})
+            ]
+
+    tts = CartesiaTts(api_key="k", voice_id="v", connect=_connect(ErrorConn()))
+    with pytest.raises(TtsError, match="status 400.*context_id"):
+        asyncio.run(_collect(tts.synthesize(_aiter(["Hi."]))))
+
+
+def test_done_frame_ends_the_stream_even_if_the_socket_stays_open():
+    class OpenSocketConn(FakeConn):
+        """Serves audio + done, then blocks forever — like a real keep-alive socket."""
+
+        async def __anext__(self):
+            if self._i >= len(self._messages):
+                await asyncio.Event().wait()  # never set: hangs unless done is honoured
+            msg = self._messages[self._i]
+            self._i += 1
+            return msg
+
+    conn = OpenSocketConn([b"AAAA"])
+    tts = CartesiaTts(api_key="k", voice_id="v", connect=_connect(conn))
+
+    async def bounded():
+        return await asyncio.wait_for(_collect(tts.synthesize(_aiter(["Hi."]))), timeout=5)
+
+    assert asyncio.run(bounded()) == [b"AAAA"]

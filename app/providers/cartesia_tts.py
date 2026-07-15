@@ -5,6 +5,13 @@ audio chunks as they arrive, so the first audio can start before the full answer
 Text is flushed on sentence boundaries for natural prosody. Behind the ``TtsProvider``
 interface (VA-30).
 
+Context protocol (live-verified 2026-07-16): every request frame must carry a ``context_id``
+— the API rejects frames without one (400). One synthesize() call = one context: each
+sentence is sent as an input continuation (``continue: true``) and an empty-transcript
+finalizer (``continue: false``) closes the context, after which the server emits its ``done``
+frame. Error frames raise :class:`TtsError` and ``done`` ends the receive loop — a failed
+context must fail the turn, not hang it.
+
 The transport is injectable (``connect``) so the adapter is fully testable without a socket;
 the default opens a real ``websockets`` connection.
 """
@@ -15,6 +22,7 @@ import base64
 import contextlib
 import json
 import re
+import uuid
 from typing import AsyncIterator, Awaitable, Callable, Protocol
 
 DEFAULT_URL = "wss://api.cartesia.ai/tts/websocket"
@@ -54,7 +62,27 @@ def decode_audio(message: str) -> list[bytes]:
         return []
     if data.get("type") == "chunk" and data.get("data"):
         return [base64.b64decode(data["data"])]
-    return []  # "done" / "timestamps" / errors handled elsewhere
+    return []  # "done" / "timestamps" / errors handled by parse_frame
+
+
+def parse_frame(message: str) -> tuple[list[bytes], bool]:
+    """Interpret one server frame: ``(audio_chunks, stream_done)``.
+
+    An ``error`` frame raises :class:`TtsError` — before this the adapter silently ignored
+    errors and hung waiting for audio that would never come (found live, 2026-07-16). A
+    ``done`` frame (or a frame flagged ``done: true``) ends the stream.
+    """
+    try:
+        data = json.loads(message)
+    except (json.JSONDecodeError, TypeError):
+        return [], False
+    if not isinstance(data, dict):
+        return [], False
+    if data.get("type") == "error":
+        raise TtsError(
+            f"Cartesia stream error (status {data.get('status_code')}): {data.get('error')}"
+        )
+    return decode_audio(message), data.get("type") == "done" or data.get("done") is True
 
 
 class CartesiaTts:
@@ -94,7 +122,7 @@ class CartesiaTts:
             f"{self._url}?api_key={self._api_key}&cartesia_version={CARTESIA_VERSION}"
         )
 
-    def _request(self, text: str) -> str:
+    def _request(self, text: str, *, context_id: str, cont: bool) -> str:
         return json.dumps(
             {
                 "model_id": self._model,
@@ -105,18 +133,25 @@ class CartesiaTts:
                     "encoding": "pcm_s16le",
                     "sample_rate": self._sample_rate,
                 },
-                "continue": False,
+                # Required by the API (frames without one are rejected with a 400) and what
+                # keeps sentence continuations ordered within the turn.
+                "context_id": context_id,
+                "continue": cont,
             }
         )
 
     async def synthesize(self, text: AsyncIterator[str]) -> AsyncIterator[bytes]:
+        context_id = uuid.uuid4().hex  # one context per turn
         conn = await self._connect()
         try:
-            sender = asyncio.create_task(self._send_text(conn, text))
+            sender = asyncio.create_task(self._send_text(conn, text, context_id))
             try:
                 async for message in conn:
-                    for audio in decode_audio(message):
+                    audio_chunks, stream_done = parse_frame(message)  # raises on error frames
+                    for audio in audio_chunks:
                         yield audio
+                    if stream_done:
+                        break
                 await sender  # surface any sender error once the stream ends
             finally:
                 if not sender.done():
@@ -127,7 +162,7 @@ class CartesiaTts:
             with contextlib.suppress(Exception):
                 await conn.close()
 
-    async def _send_text(self, conn: Connection, text: AsyncIterator[str]) -> None:
+    async def _send_text(self, conn: Connection, text: AsyncIterator[str], context_id: str) -> None:
         buffer = ""
         async for chunk in text:
             buffer += chunk
@@ -136,6 +171,8 @@ class CartesiaTts:
                 sentence, buffer = _pop_sentence(buffer)
                 if sentence is None:
                     break
-                await conn.send(self._request(sentence))
+                await conn.send(self._request(sentence, context_id=context_id, cont=True))
         if buffer.strip():
-            await conn.send(self._request(buffer.strip()))
+            await conn.send(self._request(buffer.strip(), context_id=context_id, cont=True))
+        # Close the context: the server flushes remaining audio and emits its done frame.
+        await conn.send(self._request("", context_id=context_id, cont=False))
