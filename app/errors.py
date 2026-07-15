@@ -40,6 +40,7 @@ class Problem(BaseModel):
 ERROR_RESPONSES: dict[int | str, dict] = {
     401: {"model": Problem, "description": "Missing or invalid bearer token (when auth is enabled)"},
     422: {"model": Problem, "description": "Validation error"},
+    429: {"model": Problem, "description": "Rate limit exceeded (when rate limiting is enabled)"},
     500: {"model": Problem, "description": "Internal server error"},
 }
 
