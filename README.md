@@ -11,28 +11,36 @@ There is **no backend router**: the client chooses a pipeline purely by which en
 calls. Providers and pipelines sit behind small adapter interfaces so they are swappable by
 configuration rather than code.
 
-> Status: **VA-01 — service scaffold.** This commit establishes the module boundaries and a
-> service that boots with a liveness probe. Endpoints, auth, streaming, pipelines and
-> providers arrive in their own tickets.
+The backend is functionally complete: the four voice endpoints, both pipelines, the provider
+adapters, full-document grounding, tools, session/memory/state, and observability — all
+exercised by an offline test suite. The cloud/CI infrastructure (GCP, deploy) is tracked in
+its own tickets.
+
+📖 **Docs:** [API reference](docs/api.md) · [Configuration](docs/configuration.md) ·
+[Architecture & design](docs/architecture.md)
 
 ## Project layout
 
 ```
 app/
-  main.py              # FastAPI app factory + /healthz liveness probe
-  config.py            # typed settings (expanded into a fail-fast loader in VA-19)
-  dispatch.py          # run_turn seam — no router; endpoint URL selects the pipeline (VA-21)
+  main.py              # app factory: settings, document, sessions, observability, pipelines, ops endpoints
+  config.py            # typed, fail-fast settings (VA-19)
+  dispatch.py          # endpoint -> (architecture, delivery); no router (VA-21)
+  api/voice.py         # the four voice endpoints (VA-24..27)
+  streaming/           # shared request schema + SSE event contract (VA-20)
   pipelines/
-    base.py            # Pipeline interface
     traditional/       # STT -> LLM -> TTS slow path (VA-45)
     realtime/          # voice-to-voice fast path (VA-48)
-  providers/
-    base.py            # STT / LLM / TTS adapter interfaces (VA-30)
-  context/             # full-document grounding, no RAG (VA-35..VA-37)
-  tools/               # tool / function-calling registry (VA-38)
-  streaming/           # SSE event + request/response schemas (VA-20)
-tests/                 # unit tests (run in CI on every PR)
-frontend/              # browser dashboard (VA-51+)
+  providers/           # STT/LLM/TTS/realtime adapters + config-driven factory (VA-30..46)
+  context/             # full-document grounding, no RAG (VA-35..37)
+  tools/               # tool / function-calling registry (VA-38/39)
+  session/             # session store, rolling memory, turn state machine (VA-40..42)
+  observability/       # structured logging, latency, usage, counters (VA-57..60)
+evaluation/            # offline accuracy + latency + grounding harness (VA-65/66)
+scripts/               # operational scripts: endpoint smoke (VA-67)
+frontend/              # browser dashboard, served at /ui (VA-51..56)
+docs/                  # api, configuration, architecture references
+tests/                 # offline test suite (mock providers), run in CI
 ```
 
 ## Local quickstart
@@ -46,10 +54,19 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8080
 # -> http://127.0.0.1:8080/healthz  ->  {"ok": true}
 # -> http://127.0.0.1:8080/docs     ->  Swagger UI
+# -> http://127.0.0.1:8080/ui/      ->  reference dashboard
 
-# run the tests
+# run the tests (offline, mock providers)
 pytest
+
+# offline endpoint smoke + evaluation harness
+python -m scripts.smoke
+python -m evaluation
 ```
+
+Run with no API keys by selecting the mock providers — `STT_PROVIDER=mock LLM_PROVIDER=mock
+TTS_PROVIDER=mock REALTIME_PROVIDER=mock uvicorn app.main:app`. See
+[docs/configuration.md](docs/configuration.md) for every setting.
 
 Copy `.env.example` to `.env` for local configuration. **Never commit real secrets** —
 `.env` is gitignored and secrets move to a secret manager in a later ticket.
