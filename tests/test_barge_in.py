@@ -194,4 +194,5 @@ def test_sequential_fast_turns_via_http_do_not_false_positive():
     from app.dispatch import Architecture
 
     pipeline = client.app.state.pipelines.get(Architecture.REALTIME)
+    pipeline = getattr(pipeline, "_primary", pipeline)  # unwrap the VA-49 fallback wrapper
     assert pipeline._realtime.interrupts == 0

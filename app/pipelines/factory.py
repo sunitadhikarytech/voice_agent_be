@@ -10,6 +10,7 @@ from __future__ import annotations
 from app.context.loader import DocumentContext
 from app.dispatch import PipelineRegistry
 from app.observability import EventCounters, LatencyMetrics, UsageMetrics
+from app.pipelines.fallback import RealtimeWithFallback
 from app.pipelines.realtime import RealtimePipeline
 from app.pipelines.traditional import TraditionalPipeline
 from app.providers.factory import get_realtime, make_providers
@@ -36,16 +37,20 @@ def build_pipeline_registry(
     realtime = get_realtime(settings.realtime_provider, settings)
 
     registry = PipelineRegistry()
-    registry.register(
-        TraditionalPipeline(
-            stt, llm, tts,
-            session_store=session_store, memory=memory, tools=tools, document=document,
-            metrics=metrics, usage=usage, counters=counters,
-        )
+    traditional = TraditionalPipeline(
+        stt, llm, tts,
+        session_store=session_store, memory=memory, tools=tools, document=document,
+        metrics=metrics, usage=usage, counters=counters,
     )
-    registry.register(
-        RealtimePipeline(
-            realtime, session_store=session_store, metrics=metrics, usage=usage, counters=counters
-        )
+    registry.register(traditional)
+    realtime_pipeline = RealtimePipeline(
+        realtime, session_store=session_store, metrics=metrics, usage=usage, counters=counters
     )
+    if settings.realtime_fallback_enabled:
+        # VA-49: an early realtime failure degrades to the traditional pipeline.
+        registry.register(
+            RealtimeWithFallback(realtime_pipeline, traditional, counters=counters)
+        )
+    else:
+        registry.register(realtime_pipeline)
     return registry

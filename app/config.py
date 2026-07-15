@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     openai_realtime_model: str = Field(default="gpt-4o-realtime-preview")
     openai_voice: str = Field(default="alloy")
 
+    # VA-49: when the realtime path fails before delivering anything, re-run the turn on the
+    # traditional pipeline instead of surfacing an error. False = fail fast.
+    realtime_fallback_enabled: bool = Field(default=True)
+
     # Full-document grounding (VA-35). The whole source document is the context — no RAG.
     # Empty locally (grounding off); when set, the file must exist and fit the window.
     source_doc_path: str = Field(default="")
