@@ -28,6 +28,7 @@ from app.observability import (
     bind_log_context,
 )
 from app.pipelines.base import BasePipeline
+from app.pipelines.turn_taking import join_segments, take_turn
 from app.providers.base import LlmProvider, SttProvider, TranscriptChunk, TtsProvider
 from app.session import ConversationMemory, SessionStore, TurnState, TurnStateMachine
 from app.streaming.events import (
@@ -111,17 +112,20 @@ class TraditionalPipeline(BasePipeline):
         started = self._clock()
         latency: dict[str, float] = {}
 
-        # 1) Listen / transcribe.
+        # 1) Listen / transcribe — exactly one user turn (VA-32): stop at the STT's
+        # end-of-turn signal instead of draining a stream that may never end, and join
+        # every final segment (an utterance can arrive as several finals).
         state.transition(TurnState.LISTENING)
-        transcript = ""
-        async for chunk in self._transcribe(request):
+        segments: list[str] = []
+        async for chunk in take_turn(self._transcribe(request)):
             if not chunk.text:
                 continue
             if chunk.is_final:
-                transcript = chunk.text
+                segments.append(chunk.text)
                 yield TranscriptFinal(text=chunk.text)
             else:
                 yield TranscriptPartial(text=chunk.text)
+        transcript = join_segments(segments)
         latency["stt_ms"] = self._elapsed_ms(started)
         session.add_turn("user", transcript)
 
@@ -178,13 +182,13 @@ class TraditionalPipeline(BasePipeline):
     # --- complete delivery --------------------------------------------------------------
 
     async def run(self, request: VoiceTurnRequest) -> VoiceTurnResult:
-        transcript = ""
+        segments: list[str] = []
         answer_parts: list[str] = []
         latency: dict[str, float] = {}
         session_id = request.session_id
         async for event in self.stream(request):
             if isinstance(event, TranscriptFinal):
-                transcript = event.text
+                segments.append(event.text)  # one final per segment; join below (VA-32)
             elif isinstance(event, AnswerDelta):
                 answer_parts.append(event.text)
             elif isinstance(event, Done):
@@ -192,7 +196,7 @@ class TraditionalPipeline(BasePipeline):
                 session_id = event.session_id
         return VoiceTurnResult(
             session_id=session_id,
-            transcript=transcript,
+            transcript=join_segments(segments),
             answer_text="".join(answer_parts),
             audio_url=None,  # streamed as audio.chunk; persisted-audio URL is a later concern
             tools_called=[],
