@@ -19,7 +19,13 @@ from typing import AsyncIterator, Callable
 from app.context import estimate_tokens, ground_llm
 from app.context.loader import DocumentContext
 from app.dispatch import Architecture
-from app.observability import LatencyMetrics, UsageMetrics, audio_seconds, bind_log_context
+from app.observability import (
+    EventCounters,
+    LatencyMetrics,
+    UsageMetrics,
+    audio_seconds,
+    bind_log_context,
+)
 from app.pipelines.base import BasePipeline
 from app.providers.base import LlmProvider, SttProvider, TranscriptChunk, TtsProvider
 from app.session import ConversationMemory, SessionStore, TurnState, TurnStateMachine
@@ -58,6 +64,7 @@ class TraditionalPipeline(BasePipeline):
         document: DocumentContext | None = None,
         metrics: LatencyMetrics | None = None,
         usage: UsageMetrics | None = None,
+        counters: EventCounters | None = None,
         state_factory: Callable[[], TurnStateMachine] = TurnStateMachine,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -70,6 +77,7 @@ class TraditionalPipeline(BasePipeline):
         self._memory = memory or ConversationMemory()
         self._metrics = metrics
         self._usage = usage
+        self._counters = counters
         self._state_factory = state_factory
         self._clock = clock
 
@@ -83,6 +91,18 @@ class TraditionalPipeline(BasePipeline):
     # --- streaming delivery -------------------------------------------------------------
 
     async def stream(self, request: VoiceTurnRequest) -> AsyncIterator[AnySSEEvent]:
+        """Count the turn (and any error) around the streaming implementation (VA-60)."""
+        if self._counters is not None:
+            self._counters.turn(self.architecture.value)
+        try:
+            async for event in self._stream_impl(request):
+                yield event
+        except Exception:
+            if self._counters is not None:
+                self._counters.error(self.architecture.value)
+            raise
+
+    async def _stream_impl(self, request: VoiceTurnRequest) -> AsyncIterator[AnySSEEvent]:
         tenant = _tenant_of(request)
         session = self._sessions.resolve(tenant, request.session_id)
         bind_log_context(session_id=session.session_id, tenant_id=tenant)

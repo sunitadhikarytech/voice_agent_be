@@ -16,7 +16,13 @@ import time
 from typing import AsyncIterator, Callable
 
 from app.dispatch import Architecture
-from app.observability import LatencyMetrics, UsageMetrics, audio_seconds, bind_log_context
+from app.observability import (
+    EventCounters,
+    LatencyMetrics,
+    UsageMetrics,
+    audio_seconds,
+    bind_log_context,
+)
 from app.pipelines.base import BasePipeline
 from app.providers.base import RealtimeProvider
 from app.session import SessionStore, TurnState, TurnStateMachine
@@ -38,6 +44,7 @@ class RealtimePipeline(BasePipeline):
         session_store: SessionStore | None = None,
         metrics: LatencyMetrics | None = None,
         usage: UsageMetrics | None = None,
+        counters: EventCounters | None = None,
         state_factory: Callable[[], TurnStateMachine] = TurnStateMachine,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -47,10 +54,23 @@ class RealtimePipeline(BasePipeline):
         self._sessions = session_store if session_store is not None else SessionStore()
         self._metrics = metrics
         self._usage = usage
+        self._counters = counters
         self._state_factory = state_factory
         self._clock = clock
 
     async def stream(self, request: VoiceTurnRequest) -> AsyncIterator[AnySSEEvent]:
+        """Count the turn (and any error) around the streaming implementation (VA-60)."""
+        if self._counters is not None:
+            self._counters.turn(self.architecture.value)
+        try:
+            async for event in self._stream_impl(request):
+                yield event
+        except Exception:
+            if self._counters is not None:
+                self._counters.error(self.architecture.value)
+            raise
+
+    async def _stream_impl(self, request: VoiceTurnRequest) -> AsyncIterator[AnySSEEvent]:
         if not isinstance(request.input, AudioInput):
             raise ValueError("the realtime (fast) path requires audio input")
 
