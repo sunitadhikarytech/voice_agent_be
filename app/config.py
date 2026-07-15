@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     gemini_system_prompt: str = Field(
         default="You are a helpful voice assistant. Answer concisely and conversationally."
     )
+    # VA-36: cache the full document as Gemini cached content so repeat turns aren't re-billed
+    # for the large context. Falls back to inlining the document when disabled.
+    gemini_enable_prompt_caching: bool = Field(default=True)
 
     # Cartesia TTS (VA-43). Sonic-class model; key sourced from Secret Manager in VA-14.
     cartesia_api_key: SecretStr = Field(default=SecretStr(""))
