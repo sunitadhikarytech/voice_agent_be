@@ -14,9 +14,11 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
 
+from app.api.voice import router as voice_router
 from app.config import LogLevel, Settings, get_settings
 from app.context import load_document
 from app.errors import ERROR_RESPONSES, install_error_handling
+from app.pipelines.factory import build_pipeline_registry
 from app.session import SessionStore
 from app.streaming.contract import router as contract_router
 
@@ -60,6 +62,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Per-conversation state, tenant-scoped and keyed by session id (VA-40).
     app.state.session_store = SessionStore()
 
+    # Traditional + realtime pipelines, registered by architecture for dispatch (VA-45/48).
+    app.state.pipelines = build_pipeline_registry(
+        app_settings, document=app.state.document, session_store=app.state.session_store
+    )
+
     # Consistent problem-shaped errors + correlation ids on every response (VA-28).
     install_error_handling(app)
 
@@ -81,11 +88,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Log-safe view of the effective configuration (secrets redacted)."""
         return settings.public_dict()
 
-    # Shared voice-turn + SSE contract (VA-20). The real voice endpoints arrive in VA-24..27.
+    # Shared voice-turn + SSE contract (VA-20).
     app.include_router(
         contract_router,
         prefix=f"{app_settings.api_prefix}/contract",
         tags=["contract"],
+        responses=ERROR_RESPONSES,
+    )
+
+    # The four voice endpoints (VA-24..27) + delivery modes (VA-23).
+    app.include_router(
+        voice_router,
+        prefix=f"{app_settings.api_prefix}/voice",
+        tags=["voice"],
         responses=ERROR_RESPONSES,
     )
 
