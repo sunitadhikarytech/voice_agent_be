@@ -26,12 +26,22 @@ def _build_deepgram_stt(settings: "Settings") -> SttProvider:
     return DeepgramStt.from_settings(settings)
 
 
+def _build_gemini_llm(settings: "Settings") -> LlmProvider:
+    # Lazy import so `google-genai` only loads when a Gemini provider is actually built.
+    from app.providers.gemini_llm import GeminiLlm
+
+    return GeminiLlm.from_settings(settings)
+
+
 # Constructors receive the app Settings, so adapters can read their model/keys from config.
 _STT: dict[str, Callable[["Settings"], SttProvider]] = {
     "mock": lambda _s: MockStt(),
     "deepgram": _build_deepgram_stt,
 }
-_LLM: dict[str, Callable[["Settings"], LlmProvider]] = {"mock": lambda _s: MockLlm()}
+_LLM: dict[str, Callable[["Settings"], LlmProvider]] = {
+    "mock": lambda _s: MockLlm(),
+    "gemini": _build_gemini_llm,
+}
 _TTS: dict[str, Callable[["Settings"], TtsProvider]] = {"mock": lambda _s: MockTts()}
 
 
