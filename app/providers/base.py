@@ -58,3 +58,22 @@ class TtsProvider(Protocol):
     def synthesize(self, text: AsyncIterator[str]) -> AsyncIterator[bytes]:
         """Consume text and yield audio chunks."""
         ...
+
+
+@runtime_checkable
+class RealtimeProvider(Protocol):
+    """Voice-to-voice realtime provider (the fast path, VA-46).
+
+    Unlike the traditional STT→LLM→TTS trio, a realtime provider takes mic audio in and
+    returns model audio out directly over one persistent session.
+    """
+
+    name: str
+
+    def converse(self, audio_in: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+        """Consume mic audio and yield model audio for a voice-to-voice session."""
+        ...
+
+    async def interrupt(self) -> None:
+        """Cancel any in-flight model response (barge-in, driven by VA-47)."""
+        ...

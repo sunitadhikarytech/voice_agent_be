@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     stt_provider: str = Field(default="deepgram")
     llm_provider: str = Field(default="gemini")
     tts_provider: str = Field(default="cartesia")
+    realtime_provider: str = Field(default="openai")  # fast-path, voice-to-voice (VA-46)
 
     # Deepgram STT (VA-31). Key optional locally; sourced from Secret Manager in VA-14.
     deepgram_api_key: SecretStr = Field(default=SecretStr(""))
@@ -95,6 +96,13 @@ class Settings(BaseSettings):
     cartesia_api_key: SecretStr = Field(default=SecretStr(""))
     cartesia_model: str = Field(default="sonic-2")
     cartesia_voice_id: str = Field(default="")
+
+    # OpenAI Realtime (VA-46). Voice-to-voice; key sourced from Secret Manager in VA-14.
+    # NOTE: the adapter speaks the beta `realtime=v1` wire protocol, so the model must be a
+    # beta-protocol model (the GA `gpt-realtime` uses a different event schema).
+    openai_api_key: SecretStr = Field(default=SecretStr(""))
+    openai_realtime_model: str = Field(default="gpt-4o-realtime-preview")
+    openai_voice: str = Field(default="alloy")
 
     # Secret. Optional locally, required in dev/prod (see REQUIRED_IN_CLOUD). Consumed by the
     # auth middleware in VA-15 and sourced from Secret Manager in VA-14.
