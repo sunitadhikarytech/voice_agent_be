@@ -46,3 +46,19 @@ class MockTts:
     async def synthesize(self, text: AsyncIterator[str]) -> AsyncIterator[bytes]:
         async for chunk in text:
             yield chunk.encode("utf-8")
+
+
+class MockRealtime:
+    """Voice-to-voice mock: echoes each input audio chunk back as output."""
+
+    name = "mock"
+
+    def __init__(self) -> None:
+        self.interrupts = 0
+
+    async def converse(self, audio_in: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+        async for chunk in audio_in:
+            yield b"out:" + chunk
+
+    async def interrupt(self) -> None:
+        self.interrupts += 1

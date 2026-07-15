@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from app.providers.base import LlmProvider, SttProvider, TtsProvider
-from app.providers.mock import MockLlm, MockStt, MockTts
+from app.providers.base import LlmProvider, RealtimeProvider, SttProvider, TtsProvider
+from app.providers.mock import MockLlm, MockRealtime, MockStt, MockTts
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -40,6 +40,13 @@ def _build_cartesia_tts(settings: "Settings") -> TtsProvider:
     return CartesiaTts.from_settings(settings)
 
 
+def _build_openai_realtime(settings: "Settings") -> RealtimeProvider:
+    # Lazy import so `websockets` only loads when a realtime provider is actually built.
+    from app.providers.openai_realtime import OpenAIRealtime
+
+    return OpenAIRealtime.from_settings(settings)
+
+
 # Constructors receive the app Settings, so adapters can read their model/keys from config.
 _STT: dict[str, Callable[["Settings"], SttProvider]] = {
     "mock": lambda _s: MockStt(),
@@ -53,6 +60,10 @@ _TTS: dict[str, Callable[["Settings"], TtsProvider]] = {
     "mock": lambda _s: MockTts(),
     "cartesia": _build_cartesia_tts,
 }
+_RT: dict[str, Callable[["Settings"], RealtimeProvider]] = {
+    "mock": lambda _s: MockRealtime(),
+    "openai": _build_openai_realtime,
+}
 
 
 def register_stt(name: str, ctor: Callable[["Settings"], SttProvider]) -> None:
@@ -65,6 +76,10 @@ def register_llm(name: str, ctor: Callable[["Settings"], LlmProvider]) -> None:
 
 def register_tts(name: str, ctor: Callable[["Settings"], TtsProvider]) -> None:
     _TTS[name] = ctor
+
+
+def register_realtime(name: str, ctor: Callable[["Settings"], RealtimeProvider]) -> None:
+    _RT[name] = ctor
 
 
 def _build(registry: dict[str, Callable], name: str, kind: str, settings: "Settings"):
@@ -88,6 +103,10 @@ def get_llm(name: str, settings: "Settings") -> LlmProvider:
 
 def get_tts(name: str, settings: "Settings") -> TtsProvider:
     return _build(_TTS, name, "TTS", settings)
+
+
+def get_realtime(name: str, settings: "Settings") -> RealtimeProvider:
+    return _build(_RT, name, "realtime", settings)
 
 
 def make_providers(settings: "Settings") -> tuple[SttProvider, LlmProvider, TtsProvider]:
