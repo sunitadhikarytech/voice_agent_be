@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     # ElevenLabs (VA-33 alternate STT; VA-44 alternate TTS shares the key).
     elevenlabs_api_key: SecretStr = Field(default=SecretStr(""))
     elevenlabs_stt_model: str = Field(default="scribe_v2_realtime")
+    elevenlabs_tts_model: str = Field(default="eleven_flash_v2_5")
+    elevenlabs_voice_id: str = Field(default="")
 
     # Gemini LLM (VA-34). Flash-tier model; key sourced from Secret Manager in VA-14.
     google_api_key: SecretStr = Field(default=SecretStr(""))

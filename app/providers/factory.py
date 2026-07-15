@@ -47,6 +47,13 @@ def _build_cartesia_tts(settings: "Settings") -> TtsProvider:
     return CartesiaTts.from_settings(settings)
 
 
+def _build_elevenlabs_tts(settings: "Settings") -> TtsProvider:
+    # Lazy import so `websockets` only loads when an ElevenLabs provider is actually built.
+    from app.providers.elevenlabs_tts import ElevenLabsTts
+
+    return ElevenLabsTts.from_settings(settings)
+
+
 def _build_openai_realtime(settings: "Settings") -> RealtimeProvider:
     # Lazy import so `websockets` only loads when a realtime provider is actually built.
     from app.providers.openai_realtime import OpenAIRealtime
@@ -67,6 +74,7 @@ _LLM: dict[str, Callable[["Settings"], LlmProvider]] = {
 _TTS: dict[str, Callable[["Settings"], TtsProvider]] = {
     "mock": lambda _s: MockTts(),
     "cartesia": _build_cartesia_tts,
+    "elevenlabs": _build_elevenlabs_tts,  # alternate TTS (VA-44)
 }
 _RT: dict[str, Callable[["Settings"], RealtimeProvider]] = {
     "mock": lambda _s: MockRealtime(),
