@@ -1,9 +1,17 @@
-"""Realtime pipeline: voice-to-voice fast path (VA-48).
+"""Realtime pipeline: voice-to-voice fast path (VA-48) with barge-in (VA-47).
 
 Bridges the realtime adapter (VA-46) into the ``Pipeline`` contract: streams mic audio in and
 model audio out over one session, emitting ``audio.chunk`` events and propagating ``session_id``
 for continuity. Connection teardown is owned by the adapter. Unlike the traditional path there
 is no separate transcript/answer — it is voice-to-voice.
+
+Barge-in (VA-47): the pipeline tracks the in-flight turn per ``(tenant, session)``. When a new
+turn arrives for a session whose previous turn is still **speaking**, the user has started
+talking over the reply — the pipeline cancels the in-flight model response
+(``RealtimeProvider.interrupt``) and drives the previous turn's state machine through
+``barge_in()`` (speaking → interrupted → listening) before the new turn begins. The frontend
+half of this (stopping local playback) is VA-55; this is the server half that stops the model
+from generating a reply nobody is listening to.
 
 The fast endpoint (VA-24) feeds real mic audio over a WebSocket; here the request's audio blob
 is the input stream, which keeps the pipeline seam simple and fully mockable.
@@ -58,6 +66,8 @@ class RealtimePipeline(BasePipeline):
         self._counters = counters
         self._state_factory = state_factory
         self._clock = clock
+        # In-flight turn state per (tenant, session) — consulted for barge-in (VA-47).
+        self._active_turns: dict[str, TurnStateMachine] = {}
 
     async def stream(self, request: VoiceTurnRequest) -> AsyncIterator[AnySSEEvent]:
         """Count the turn (and any error) around the streaming implementation (VA-60)."""
@@ -78,34 +88,56 @@ class RealtimePipeline(BasePipeline):
         tenant = _tenant_of(request)
         session = self._sessions.resolve(tenant, request.session_id)
         bind_log_context(session_id=session.session_id, tenant_id=tenant)
+
+        # Barge-in (VA-47): a new turn while this session's previous reply is still being
+        # spoken means the user talked over it — cancel the in-flight response first.
+        turn_key = f"{tenant}:{session.session_id}"
+        await self._barge_in_if_speaking(turn_key)
+
         state = self._state_factory()
-        started = self._clock()
-        state.transition(TurnState.LISTENING)
-        state.transition(TurnState.THINKING)
+        self._active_turns[turn_key] = state
+        try:
+            started = self._clock()
+            state.transition(TurnState.LISTENING)
+            state.transition(TurnState.THINKING)
 
-        input_bytes = base64.b64decode(request.input.audio_b64)
-        audio_in = _audio_stream(input_bytes)
-        seq = 0
-        first_audio: float | None = None
-        output_audio_bytes = 0
-        async for audio in self._realtime.converse(audio_in):
-            if first_audio is None:
-                first_audio = self._elapsed_ms(started)
-                state.transition(TurnState.SPEAKING)
-            output_audio_bytes += len(audio)
-            yield AudioChunk(audio_b64=base64.b64encode(audio).decode("ascii"), seq=seq)
-            seq += 1
+            input_bytes = base64.b64decode(request.input.audio_b64)
+            audio_in = _audio_stream(input_bytes)
+            seq = 0
+            first_audio: float | None = None
+            output_audio_bytes = 0
+            async for audio in self._realtime.converse(audio_in):
+                if first_audio is None:
+                    first_audio = self._elapsed_ms(started)
+                    state.transition(TurnState.SPEAKING)
+                output_audio_bytes += len(audio)
+                yield AudioChunk(audio_b64=base64.b64encode(audio).decode("ascii"), seq=seq)
+                seq += 1
 
-        state.transition(TurnState.IDLE)
-        latency = {"first_audio_ms": first_audio} if first_audio is not None else {}
-        if self._metrics is not None:
-            self._metrics.record(self.architecture.value, latency)
-        if self._usage is not None:
-            seconds = audio_seconds(len(input_bytes)) + audio_seconds(output_audio_bytes)
-            self._usage.record(self.architecture.value, tenant, audio_seconds=seconds)
-            logger.info("usage", extra={"path": self.architecture.value, "audio_seconds": seconds})
-        logger.info("realtime turn complete", extra={"latency_ms": latency})
-        yield Done(session_id=session.session_id, latency_ms=latency)
+            state.transition(TurnState.IDLE)
+            latency = {"first_audio_ms": first_audio} if first_audio is not None else {}
+            if self._metrics is not None:
+                self._metrics.record(self.architecture.value, latency)
+            if self._usage is not None:
+                seconds = audio_seconds(len(input_bytes)) + audio_seconds(output_audio_bytes)
+                self._usage.record(self.architecture.value, tenant, audio_seconds=seconds)
+                logger.info("usage", extra={"path": self.architecture.value, "audio_seconds": seconds})
+            logger.info("realtime turn complete", extra={"latency_ms": latency})
+            yield Done(session_id=session.session_id, latency_ms=latency)
+        finally:
+            # Deregister only if this turn is still the session's active one (a barge-in
+            # replacement may already have registered itself).
+            if self._active_turns.get(turn_key) is state:
+                del self._active_turns[turn_key]
+
+    async def _barge_in_if_speaking(self, turn_key: str) -> None:
+        """Interrupt the session's in-flight reply if it is mid-speech (VA-47)."""
+        previous = self._active_turns.get(turn_key)
+        if previous is None or previous.state is not TurnState.SPEAKING:
+            return  # nothing playing — a normal sequential turn, not a barge-in
+        await self._realtime.interrupt()
+        previous.barge_in()  # speaking → interrupted → listening (VA-42 semantics)
+        logger.info("barge-in: cancelled in-flight reply", extra={"turn_key": turn_key})
 
     async def run(self, request: VoiceTurnRequest) -> VoiceTurnResult:
         # Realtime is voice-to-voice (no separate transcript/answer text). The four endpoints
