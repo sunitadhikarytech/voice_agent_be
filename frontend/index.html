@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voice AI Agent — Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Voice AI Agent</h1>
+
+      <section class="controls">
+        <label>
+          Mode
+          <!-- Hardcoded endpoint selection per feature (VA-52); the URL IS the selector. -->
+          <select id="endpoint">
+            <option value="fast">Fast — realtime (audio)</option>
+            <option value="slow" selected>Slow — traditional (streamed)</option>
+            <option value="stream">Stream — traditional (SSE)</option>
+            <option value="complete">Complete — traditional (JSON)</option>
+          </select>
+        </label>
+
+        <label>
+          Text
+          <input id="text" type="text" placeholder="Type a question, or use the mic…" />
+        </label>
+
+        <div class="buttons">
+          <button id="send">Send text</button>
+          <button id="mic">🎤 Hold to talk</button>
+          <button id="stop" disabled>Stop audio</button>
+        </div>
+      </section>
+
+      <section class="captions">
+        <h2>Transcript &amp; answer</h2>
+        <div id="transcript" class="line transcript"></div>
+        <div id="answer" class="line answer"></div>
+      </section>
+
+      <section class="debug">
+        <h2>Debug</h2>
+        <table>
+          <tr><th>Endpoint</th><td id="dbg-endpoint">—</td></tr>
+          <tr><th>State</th><td id="dbg-state">idle</td></tr>
+          <tr><th>Audio chunks</th><td id="dbg-audio">0</td></tr>
+          <tr><th>Latency (ms)</th><td id="dbg-latency">—</td></tr>
+          <tr><th>Session</th><td id="dbg-session">—</td></tr>
+        </table>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
