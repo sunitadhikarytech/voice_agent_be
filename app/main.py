@@ -15,6 +15,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 
 from app.config import LogLevel, Settings, get_settings
+from app.context import load_document
 from app.errors import ERROR_RESPONSES, install_error_handling
 from app.streaming.contract import router as contract_router
 
@@ -50,6 +51,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         summary="Dual-pipeline voice assistant (traditional STT→LLM→TTS + realtime voice-to-voice).",
     )
     app.state.settings = app_settings
+
+    # Load the full-document context once at startup (VA-35). A configured-but-missing or
+    # oversized document fails fast here rather than mid-turn; None when grounding is off.
+    app.state.document = load_document(app_settings)
 
     # Consistent problem-shaped errors + correlation ids on every response (VA-28).
     install_error_handling(app)
