@@ -1,0 +1,28 @@
+# VA-67 — endpoint smoke on every PR: boot the app in-process (mock providers) and check the
+# key endpoints respond. Complements docker-image.yml (which smoke-tests /healthz in the
+# container). The same script targets a deployed URL via --base-url for the post-deploy smoke
+# once the deploy pipeline lands (VA-12).
+name: smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  endpoints:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Endpoint smoke (in-process, mock providers)
+        run: python -m scripts.smoke
