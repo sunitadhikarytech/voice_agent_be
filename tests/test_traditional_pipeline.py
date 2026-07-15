@@ -106,6 +106,15 @@ def test_run_returns_complete_result():
 
 # --- session memory ---------------------------------------------------------------------
 
+def test_injected_session_store_is_used():
+    # regression: an empty injected store is falsy (SessionStore.__len__) and must not be
+    # silently replaced — a new turn should get an id from the injected store's factory.
+    store = SessionStore(id_factory=lambda: "sess-generated")
+    pipe, _ = _pipeline(session_store=store)
+    done = _run_stream(pipe, _text_request())[-1]  # no session_id -> new session
+    assert done.session_id == "sess-generated"
+
+
 def test_conversation_memory_carries_prior_turns_into_later_prompts():
     store = SessionStore(id_factory=lambda: "sess-1")
     pipe, llm = _pipeline(session_store=store)
