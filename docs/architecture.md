@@ -101,6 +101,11 @@ header), `session_id`, and `tenant_id`, and records:
 - **usage** — tokens + audio-seconds per path/tenant (`/api/v1/usage`),
 - **counters** — turns/errors/fallbacks + rates (`/api/v1/counters`).
 
+Logs are **PII-safe by construction** (VA-18): every rendered line passes through a scrubber
+at the formatter boundary that redacts conversation content (transcripts, prompts, audio) by
+key, and personal-data/credential shapes (emails, phone numbers, bearer tokens, JWTs) inside
+any string — so payload content never reaches stdout even via a mistaken log extra.
+
 ## Deployment shape
 
 The service is containerized (multi-stage slim `python:3.12`, non-root) and targets **Cloud

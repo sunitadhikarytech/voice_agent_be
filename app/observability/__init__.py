@@ -10,6 +10,7 @@ from app.observability.logging import (
 )
 from app.observability.counters import EventCounters
 from app.observability.metrics import LatencyMetrics, percentile
+from app.observability.pii import REDACTED, scrub, scrub_text
 from app.observability.usage import UsageMetrics, audio_seconds
 
 __all__ = [
@@ -25,4 +26,7 @@ __all__ = [
     "UsageMetrics",
     "audio_seconds",
     "EventCounters",
+    "REDACTED",
+    "scrub",
+    "scrub_text",
 ]
