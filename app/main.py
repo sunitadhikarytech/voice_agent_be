@@ -9,15 +9,15 @@ tickets.
 """
 from __future__ import annotations
 
-import logging
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
 
 from app.api.voice import router as voice_router
-from app.config import LogLevel, Settings, get_settings
+from app.config import Settings, get_settings
 from app.context import load_document
 from app.errors import ERROR_RESPONSES, install_error_handling
+from app.observability import configure_logging
 from app.pipelines.factory import build_pipeline_registry
 from app.session import SessionStore
 from app.streaming.contract import router as contract_router
@@ -32,12 +32,6 @@ def get_app_settings(request: Request) -> Settings:
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 
 
-def _apply_log_level(level: LogLevel) -> None:
-    """Set the root log level from configuration. Structured JSON logging, correlation IDs
-    and handlers are added in VA-57; this only honours the configured verbosity."""
-    logging.getLogger().setLevel(level.value)
-
-
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Application factory.
 
@@ -46,7 +40,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     stored on ``app.state`` and reach handlers via :func:`get_app_settings`.
     """
     app_settings = settings or get_settings()
-    _apply_log_level(app_settings.log_level)
+    # Structured JSON logging with correlation/session/tenant context (VA-57).
+    configure_logging(app_settings.log_level.value)
 
     app = FastAPI(
         title="Voice AI Agent",

@@ -12,12 +12,14 @@ the whole turn is deterministic and testable with the mock providers.
 from __future__ import annotations
 
 import base64
+import logging
 import time
 from typing import AsyncIterator, Callable
 
 from app.context import ground_llm
 from app.context.loader import DocumentContext
 from app.dispatch import Architecture
+from app.observability import bind_log_context
 from app.pipelines.base import BasePipeline
 from app.providers.base import LlmProvider, SttProvider, TranscriptChunk, TtsProvider
 from app.session import ConversationMemory, SessionStore, TurnState, TurnStateMachine
@@ -31,6 +33,8 @@ from app.streaming.events import (
 )
 from app.streaming.schemas import AudioInput, TextInput, VoiceTurnRequest, VoiceTurnResult
 from app.tools import ToolRegistry
+
+logger = logging.getLogger("app.pipelines.traditional")
 
 
 async def _once(item: str) -> AsyncIterator[str]:
@@ -75,7 +79,9 @@ class TraditionalPipeline(BasePipeline):
     # --- streaming delivery -------------------------------------------------------------
 
     async def stream(self, request: VoiceTurnRequest) -> AsyncIterator[AnySSEEvent]:
-        session = self._sessions.resolve(_tenant_of(request), request.session_id)
+        tenant = _tenant_of(request)
+        session = self._sessions.resolve(tenant, request.session_id)
+        bind_log_context(session_id=session.session_id, tenant_id=tenant)
         state = self._state_factory()
         started = self._clock()
         latency: dict[str, float] = {}
@@ -119,6 +125,7 @@ class TraditionalPipeline(BasePipeline):
             latency["first_audio_ms"] = first_audio
 
         state.transition(TurnState.IDLE)
+        logger.info("traditional turn complete", extra={"latency_ms": latency})
         yield Done(session_id=session.session_id, latency_ms=latency)
 
     # --- complete delivery --------------------------------------------------------------
