@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     deepgram_api_key: SecretStr = Field(default=SecretStr(""))
     deepgram_model: str = Field(default="nova-3")
 
+    # ElevenLabs (VA-33 alternate STT; VA-44 alternate TTS shares the key).
+    elevenlabs_api_key: SecretStr = Field(default=SecretStr(""))
+    elevenlabs_stt_model: str = Field(default="scribe_v2_realtime")
+
     # Gemini LLM (VA-34). Flash-tier model; key sourced from Secret Manager in VA-14.
     google_api_key: SecretStr = Field(default=SecretStr(""))
     gemini_model: str = Field(default="gemini-2.0-flash")

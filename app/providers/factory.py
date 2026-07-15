@@ -26,6 +26,13 @@ def _build_deepgram_stt(settings: "Settings") -> SttProvider:
     return DeepgramStt.from_settings(settings)
 
 
+def _build_elevenlabs_stt(settings: "Settings") -> SttProvider:
+    # Lazy import so `websockets` only loads when an ElevenLabs provider is actually built.
+    from app.providers.elevenlabs_stt import ElevenLabsStt
+
+    return ElevenLabsStt.from_settings(settings)
+
+
 def _build_gemini_llm(settings: "Settings") -> LlmProvider:
     # Lazy import so `google-genai` only loads when a Gemini provider is actually built.
     from app.providers.gemini_llm import GeminiLlm
@@ -51,6 +58,7 @@ def _build_openai_realtime(settings: "Settings") -> RealtimeProvider:
 _STT: dict[str, Callable[["Settings"], SttProvider]] = {
     "mock": lambda _s: MockStt(),
     "deepgram": _build_deepgram_stt,
+    "elevenlabs": _build_elevenlabs_stt,  # alternate STT (VA-33)
 }
 _LLM: dict[str, Callable[["Settings"], LlmProvider]] = {
     "mock": lambda _s: MockLlm(),

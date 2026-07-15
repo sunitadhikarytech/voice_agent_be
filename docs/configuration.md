@@ -43,6 +43,13 @@ tests and the evaluation harness use by default).
 | `DEEPGRAM_API_KEY` | *(empty)* | **Secret.** Required only when `STT_PROVIDER=deepgram` |
 | `DEEPGRAM_MODEL` | `nova-3` | STT model |
 
+## ElevenLabs (VA-33 alternate STT / VA-44 alternate TTS)
+
+| Env var | Default | Notes |
+| --- | --- | --- |
+| `ELEVENLABS_API_KEY` | *(empty)* | **Secret.** Required only when an `elevenlabs` provider is selected |
+| `ELEVENLABS_STT_MODEL` | `scribe_v2_realtime` | Realtime Scribe model for `STT_PROVIDER=elevenlabs` |
+
 ## Gemini LLM (VA-34 / VA-36)
 
 | Env var | Default | Notes |
