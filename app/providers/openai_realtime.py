@@ -110,7 +110,7 @@ class OpenAIRealtime:
         self._active: Connection | None = None  # current session, for interrupt()
 
     def __repr__(self) -> str:  # never expose the API key
-        return f"OpenAIRealtime(model={self._model!r}, voice={self._voice!r})"
+        return f"{type(self).__name__}(model={self._model!r}, voice={self._voice!r})"
 
     @classmethod
     def from_settings(cls, settings) -> "OpenAIRealtime":

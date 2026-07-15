@@ -77,6 +77,17 @@ tests and the evaluation harness use by default).
 | `OPENAI_REALTIME_MODEL` | `gpt-4o-realtime-preview` | Must be a **beta-protocol** model — the adapter speaks `realtime=v1`; the GA `gpt-realtime` uses a different event schema |
 | `OPENAI_VOICE` | `alloy` | Realtime voice |
 
+## Alternate realtime providers (VA-50)
+
+| Env var | Default | Notes |
+| --- | --- | --- |
+| `GEMINI_LIVE_MODEL` | `gemini-2.0-flash-live-001` | Live model for `REALTIME_PROVIDER=gemini-live` (reuses `GOOGLE_API_KEY`). Barge-in is native (server VAD) |
+| `GEMINI_LIVE_VOICE` | `Puck` | Prebuilt live voice |
+| `XAI_API_KEY` | *(empty)* | **Secret.** Required only when `REALTIME_PROVIDER=grok` |
+| `GROK_REALTIME_MODEL` | `grok-voice` | xAI realtime voice model |
+| `GROK_VOICE` | `ara` | Grok voice |
+| `GROK_REALTIME_URL` | `wss://api.x.ai/v1/realtime` | xAI's OpenAI-compatible realtime endpoint (config so rollout tracking is a config change) |
+
 ## Grounding & memory (VA-35 / VA-41)
 
 | Env var | Default | Notes |
