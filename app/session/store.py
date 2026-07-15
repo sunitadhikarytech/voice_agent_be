@@ -38,6 +38,10 @@ class Session:
         self.turns.append(turn)
         return turn
 
+    def clear(self) -> None:
+        """Clear the conversation memory for this session (rotate the dialogue)."""
+        self.turns.clear()
+
 
 class SessionStore:
     """In-memory session store, namespaced by ``(tenant_id, session_id)``."""
