@@ -13,6 +13,7 @@ import asyncio
 import sys
 
 from evaluation.dataset import load_seed_set
+from evaluation.grounding import evaluate_grounding
 from evaluation.harness import evaluate
 from evaluation.runners import AppTurnRunner
 
@@ -27,8 +28,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    report = asyncio.run(evaluate(load_seed_set(), AppTurnRunner()))
+    cases = load_seed_set()
+    runner = AppTurnRunner()
+    report = asyncio.run(evaluate(cases, runner))
     print(report.format())
+
+    # Grounding (VA-66) — only meaningful when a source document is loaded.
+    document_text = runner.document_text
+    if document_text:
+        grounding = asyncio.run(evaluate_grounding(cases, runner, document_text))
+        print()
+        print(grounding.format())
+
     return 0 if report.accuracy >= args.min_accuracy else 1
 
 

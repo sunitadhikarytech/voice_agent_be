@@ -32,6 +32,12 @@ class MockLlm:
 
     def __init__(self, tokens: tuple[str, ...] = ("mock ", "answer")) -> None:
         self._tokens = tokens
+        # Mirror the settable attributes the pipeline and grounding (VA-37) mutate on a real
+        # LLM adapter (see GeminiLlm), so grounding works with the mock when a document is
+        # loaded instead of raising AttributeError.
+        self.system_prompt = "You are a helpful voice assistant."
+        self.document_context: str | None = None
+        self.tools: list | None = None
 
     async def generate(self, prompt: str, *, system: str | None = None) -> AsyncIterator[str]:
         for token in self._tokens:
