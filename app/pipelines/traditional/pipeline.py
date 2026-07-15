@@ -16,10 +16,10 @@ import logging
 import time
 from typing import AsyncIterator, Callable
 
-from app.context import ground_llm
+from app.context import estimate_tokens, ground_llm
 from app.context.loader import DocumentContext
 from app.dispatch import Architecture
-from app.observability import LatencyMetrics, bind_log_context
+from app.observability import LatencyMetrics, UsageMetrics, audio_seconds, bind_log_context
 from app.pipelines.base import BasePipeline
 from app.providers.base import LlmProvider, SttProvider, TranscriptChunk, TtsProvider
 from app.session import ConversationMemory, SessionStore, TurnState, TurnStateMachine
@@ -57,6 +57,7 @@ class TraditionalPipeline(BasePipeline):
         tools: ToolRegistry | None = None,
         document: DocumentContext | None = None,
         metrics: LatencyMetrics | None = None,
+        usage: UsageMetrics | None = None,
         state_factory: Callable[[], TurnStateMachine] = TurnStateMachine,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -68,6 +69,7 @@ class TraditionalPipeline(BasePipeline):
         self._sessions = session_store if session_store is not None else SessionStore()
         self._memory = memory or ConversationMemory()
         self._metrics = metrics
+        self._usage = usage
         self._state_factory = state_factory
         self._clock = clock
 
@@ -118,9 +120,11 @@ class TraditionalPipeline(BasePipeline):
         state.transition(TurnState.SPEAKING)
         seq = 0
         first_audio: float | None = None
+        output_audio_bytes = 0
         async for audio in self._tts.synthesize(_once(answer)):
             if first_audio is None:
                 first_audio = self._elapsed_ms(started)
+            output_audio_bytes += len(audio)
             yield AudioChunk(audio_b64=base64.b64encode(audio).decode("ascii"), seq=seq)
             seq += 1
         if first_audio is not None:
@@ -129,8 +133,26 @@ class TraditionalPipeline(BasePipeline):
         state.transition(TurnState.IDLE)
         if self._metrics is not None:
             self._metrics.record(self.architecture.value, latency)
+        self._record_usage(tenant, request, prompt, answer, output_audio_bytes)
         logger.info("traditional turn complete", extra={"latency_ms": latency})
         yield Done(session_id=session.session_id, latency_ms=latency)
+
+    def _record_usage(
+        self, tenant: str, request: VoiceTurnRequest, prompt: str, answer: str, out_bytes: int
+    ) -> None:
+        if self._usage is None:
+            return
+        in_bytes = (
+            len(base64.b64decode(request.input.audio_b64))
+            if isinstance(request.input, AudioInput)
+            else 0
+        )
+        tokens = estimate_tokens(prompt) + estimate_tokens(answer)
+        seconds = audio_seconds(in_bytes) + audio_seconds(out_bytes)
+        self._usage.record(self.architecture.value, tenant, tokens=tokens, audio_seconds=seconds)
+        logger.info(
+            "usage", extra={"path": self.architecture.value, "tokens": tokens, "audio_seconds": seconds}
+        )
 
     # --- complete delivery --------------------------------------------------------------
 

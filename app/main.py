@@ -17,7 +17,7 @@ from app.api.voice import router as voice_router
 from app.config import Settings, get_settings
 from app.context import load_document
 from app.errors import ERROR_RESPONSES, install_error_handling
-from app.observability import LatencyMetrics, configure_logging
+from app.observability import LatencyMetrics, UsageMetrics, configure_logging
 from app.pipelines.factory import build_pipeline_registry
 from app.session import SessionStore
 from app.streaming.contract import router as contract_router
@@ -57,8 +57,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Per-conversation state, tenant-scoped and keyed by session id (VA-40).
     app.state.session_store = SessionStore()
 
-    # Per-path latency metrics (VA-58), fed by the pipelines.
+    # Per-path latency (VA-58) + cost/usage (VA-59) metrics, fed by the pipelines.
     app.state.metrics = LatencyMetrics()
+    app.state.usage = UsageMetrics()
 
     # Traditional + realtime pipelines, registered by architecture for dispatch (VA-45/48).
     app.state.pipelines = build_pipeline_registry(
@@ -66,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         document=app.state.document,
         session_store=app.state.session_store,
         metrics=app.state.metrics,
+        usage=app.state.usage,
     )
 
     # Consistent problem-shaped errors + correlation ids on every response (VA-28).
@@ -93,6 +95,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def metrics(request: Request) -> dict[str, object]:
         """Per-path latency aggregates (p50/p95) — fast-vs-slow comparable (VA-58)."""
         return request.app.state.metrics.summary()
+
+    @app.get(f"{app_settings.api_prefix}/usage", tags=["ops"])
+    def usage(request: Request) -> dict[str, object]:
+        """Per-path, per-tenant usage: tokens + audio-seconds (cost metering, VA-59)."""
+        return request.app.state.usage.summary()
 
     # Shared voice-turn + SSE contract (VA-20).
     app.include_router(
