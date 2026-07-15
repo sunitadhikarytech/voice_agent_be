@@ -15,7 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field
 class TextInput(BaseModel):
     """A text utterance."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"kind": "text", "text": "What does Article 21 guarantee?"}]},
+    )
 
     kind: Literal["text"] = "text"
     text: str = Field(min_length=1, description="User text for this turn.")
@@ -24,7 +27,14 @@ class TextInput(BaseModel):
 class AudioInput(BaseModel):
     """A base64-encoded audio utterance (Opus in a WebM container)."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"kind": "audio", "audio_b64": "T2dnUwACAAAA...", "mime": "audio/webm;codecs=opus"}
+            ]
+        },
+    )
 
     kind: Literal["audio"] = "audio"
     audio_b64: str = Field(min_length=1, description="Base64-encoded audio bytes.")
@@ -43,7 +53,25 @@ class VoiceTurnRequest(BaseModel):
     only selector.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"input": {"kind": "text", "text": "What does Article 21 guarantee?"}},
+                {
+                    "session_id": "sess-8f14e45f",
+                    "input": {"kind": "text", "text": "And how do the courts enforce it?"},
+                },
+                {
+                    "input": {
+                        "kind": "audio",
+                        "audio_b64": "T2dnUwACAAAA...",
+                        "mime": "audio/webm;codecs=opus",
+                    }
+                },
+            ]
+        },
+    )
 
     session_id: str | None = Field(
         default=None,
@@ -60,7 +88,21 @@ class VoiceTurnResult(BaseModel):
     instead.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "session_id": "sess-8f14e45f",
+                    "transcript": "What does Article 21 guarantee?",
+                    "answer_text": "Article 21 guarantees the protection of life and personal liberty…",
+                    "audio_url": None,
+                    "tools_called": [],
+                    "latency_ms": {"stt_ms": 182.4, "llm_ms": 421.9, "first_audio_ms": 730.2},
+                }
+            ]
+        },
+    )
 
     session_id: str | None = None
     transcript: str = Field(description="Final transcript of the user's utterance.")
