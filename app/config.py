@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     openai_realtime_model: str = Field(default="gpt-4o-realtime-preview")
     openai_voice: str = Field(default="alloy")
 
+    # Full-document grounding (VA-35). The whole source document is the context — no RAG.
+    # Empty locally (grounding off); when set, the file must exist and fit the window.
+    source_doc_path: str = Field(default="")
+    context_window_tokens: int = Field(default=1_000_000, gt=0)
+
     # Secret. Optional locally, required in dev/prod (see REQUIRED_IN_CLOUD). Consumed by the
     # auth middleware in VA-15 and sourced from Secret Manager in VA-14.
     jwt_secret_key: SecretStr = Field(default=SecretStr(""))
