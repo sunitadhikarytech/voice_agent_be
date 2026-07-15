@@ -4,6 +4,21 @@ The entire source document is supplied to the model as context (with prompt cach
 rather than retrieved from a vector store. VA-35 loads and size-validates it; VA-37 grounds
 answers in it.
 """
+from app.context.grounding import (
+    GROUNDING_INSTRUCTIONS,
+    build_grounded_prompt,
+    extract_citations,
+    ground_llm,
+)
 from app.context.loader import DocumentContext, DocumentError, estimate_tokens, load_document
 
-__all__ = ["DocumentContext", "DocumentError", "estimate_tokens", "load_document"]
+__all__ = [
+    "DocumentContext",
+    "DocumentError",
+    "estimate_tokens",
+    "load_document",
+    "GROUNDING_INSTRUCTIONS",
+    "build_grounded_prompt",
+    "extract_citations",
+    "ground_llm",
+]
