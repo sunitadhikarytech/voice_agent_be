@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.observability.logging import correlation_id_var
+
 logger = logging.getLogger("app.errors")
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -65,6 +67,8 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         correlation_id = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
         request.state.correlation_id = correlation_id
+        # Bind it so every log line during this request carries the correlation id (VA-57).
+        correlation_id_var.set(correlation_id)
         response = await call_next(request)
         response.headers[REQUEST_ID_HEADER] = correlation_id
         return response

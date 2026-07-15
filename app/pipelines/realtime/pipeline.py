@@ -11,15 +11,19 @@ is the input stream, which keeps the pipeline seam simple and fully mockable.
 from __future__ import annotations
 
 import base64
+import logging
 import time
 from typing import AsyncIterator, Callable
 
 from app.dispatch import Architecture
+from app.observability import bind_log_context
 from app.pipelines.base import BasePipeline
 from app.providers.base import RealtimeProvider
 from app.session import SessionStore, TurnState, TurnStateMachine
 from app.streaming.events import AnySSEEvent, AudioChunk, Done
 from app.streaming.schemas import AudioInput, VoiceTurnRequest, VoiceTurnResult
+
+logger = logging.getLogger("app.pipelines.realtime")
 
 
 class RealtimePipeline(BasePipeline):
@@ -46,7 +50,9 @@ class RealtimePipeline(BasePipeline):
         if not isinstance(request.input, AudioInput):
             raise ValueError("the realtime (fast) path requires audio input")
 
-        session = self._sessions.resolve(_tenant_of(request), request.session_id)
+        tenant = _tenant_of(request)
+        session = self._sessions.resolve(tenant, request.session_id)
+        bind_log_context(session_id=session.session_id, tenant_id=tenant)
         state = self._state_factory()
         started = self._clock()
         state.transition(TurnState.LISTENING)
@@ -64,6 +70,7 @@ class RealtimePipeline(BasePipeline):
 
         state.transition(TurnState.IDLE)
         latency = {"first_audio_ms": first_audio} if first_audio is not None else {}
+        logger.info("realtime turn complete", extra={"latency_ms": latency})
         yield Done(session_id=session.session_id, latency_ms=latency)
 
     async def run(self, request: VoiceTurnRequest) -> VoiceTurnResult:
