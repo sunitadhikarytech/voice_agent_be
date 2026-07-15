@@ -35,6 +35,12 @@ class AppTurnRunner:
     def __init__(self, settings: Settings | None = None) -> None:
         self._client = TestClient(create_app(settings or mock_settings()))
 
+    @property
+    def document_text(self) -> str:
+        """The grounding document the app loaded, or ``""`` when grounding is off."""
+        document = self._client.app.state.document
+        return document.text if document is not None else ""
+
     async def __call__(self, question: str) -> RunResult:
         start = time.monotonic()
         resp = self._client.post(_COMPLETE, json={"input": {"kind": "text", "text": question}})
