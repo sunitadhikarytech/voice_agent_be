@@ -1,8 +1,9 @@
-"""VA-35 — full-document context loader (no RAG)."""
+"""VA-35 — full-document context loader (no RAG), incl. PDF support."""
 import pytest
 
 from app.config import Settings
 from app.context import DocumentContext, DocumentError, estimate_tokens, load_document
+from app.context import loader as loader_module
 from app.main import create_app
 
 
@@ -40,6 +41,44 @@ def test_missing_configured_document_fails_fast(tmp_path):
     with pytest.raises(DocumentError) as ei:
         load_document(_settings(source_doc_path=str(missing)))
     assert str(missing) in str(ei.value)
+
+
+# --- PDF support ------------------------------------------------------------------------
+
+def test_pdf_document_is_extracted(tmp_path, monkeypatch):
+    pdf = tmp_path / "constitution.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake bytes")  # real bytes irrelevant; extraction is stubbed
+    monkeypatch.setattr(loader_module, "_extract_pdf_text", lambda p: "EXTRACTED PDF TEXT")
+    result = load_document(_settings(source_doc_path=str(pdf)))
+    assert result.text == "EXTRACTED PDF TEXT"
+    assert result.path == str(pdf)
+
+
+def test_pdf_extension_is_case_insensitive(tmp_path, monkeypatch):
+    pdf = tmp_path / "DOC.PDF"
+    pdf.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(loader_module, "_extract_pdf_text", lambda p: "text")
+    assert load_document(_settings(source_doc_path=str(pdf))).text == "text"
+
+
+def test_pdf_extraction_failure_fails_fast(tmp_path, monkeypatch):
+    pdf = tmp_path / "broken.pdf"
+    pdf.write_bytes(b"not really a pdf")
+
+    def _boom(_p):
+        raise DocumentError("could not extract text from PDF broken.pdf: bad xref")
+
+    monkeypatch.setattr(loader_module, "_extract_pdf_text", _boom)
+    with pytest.raises(DocumentError) as ei:
+        load_document(_settings(source_doc_path=str(pdf)))
+    assert "could not extract" in str(ei.value)
+
+
+def test_missing_pdf_fails_fast_before_extraction(tmp_path):
+    missing = tmp_path / "gone.pdf"
+    with pytest.raises(DocumentError) as ei:
+        load_document(_settings(source_doc_path=str(missing)))
+    assert "not found" in str(ei.value)
 
 
 def test_empty_document_fails_fast(tmp_path):

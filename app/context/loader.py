@@ -1,11 +1,13 @@
-"""Full-document context loader (VA-35).
+"""Full-document context loader (VA-35, + PDF support).
 
 Loads the entire source document (the "constitution") once at startup and validates it fits
 the model's context window. The whole document IS the context — there is no vector store /
 RAG. A configured-but-missing (or oversized) document fails fast with a clear error; when no
 document is configured, grounding is simply off and the service still boots.
 
-VA-36 attaches this to the model with prompt caching; VA-37 grounds answers in it.
+Plain-text (``.txt``/``.md``) and ``.pdf`` sources are supported; a PDF's text is extracted
+with ``pypdf``. VA-36 attaches this to the model with prompt caching; VA-37 grounds answers
+in it.
 """
 from __future__ import annotations
 
@@ -36,6 +38,26 @@ def estimate_tokens(text: str) -> int:
     return (len(text) + _CHARS_PER_TOKEN - 1) // _CHARS_PER_TOKEN
 
 
+def _extract_pdf_text(path: Path) -> str:
+    """Extract text from a PDF with pypdf, concatenating all pages."""
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:  # pragma: no cover - pypdf is a declared dependency
+        raise DocumentError("pypdf is required to load PDF source documents") from exc
+    try:
+        reader = PdfReader(str(path))
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    except Exception as exc:
+        raise DocumentError(f"could not extract text from PDF {path}: {exc}") from exc
+
+
+def _read_document(path: Path) -> str:
+    """Read the document text, extracting from PDF when the suffix is ``.pdf``."""
+    if path.suffix.lower() == ".pdf":
+        return _extract_pdf_text(path)
+    return path.read_text(encoding="utf-8")
+
+
 def load_document(settings) -> DocumentContext | None:
     """Load and validate the source document named by ``settings.source_doc_path``.
 
@@ -48,10 +70,12 @@ def load_document(settings) -> DocumentContext | None:
         return None
 
     path = Path(raw_path)
+    if not path.exists():
+        raise DocumentError(f"source document not found: {raw_path}")
     try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise DocumentError(f"source document not found: {raw_path}") from exc
+        text = _read_document(path)
+    except DocumentError:
+        raise
     except OSError as exc:
         raise DocumentError(f"could not read source document {raw_path}: {exc}") from exc
 
