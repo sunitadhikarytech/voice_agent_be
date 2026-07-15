@@ -23,6 +23,7 @@ from app.context import load_document
 from app.errors import ERROR_RESPONSES, install_error_handling
 from app.observability import EventCounters, LatencyMetrics, UsageMetrics, configure_logging
 from app.pipelines.factory import build_pipeline_registry
+from app.ratelimit import install_rate_limiting
 from app.session import SessionStore
 from app.streaming.contract import router as contract_router
 
@@ -77,9 +78,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         counters=app.state.counters,
     )
 
-    # Bearer-JWT authentication (VA-15), on when JWT_SECRET_KEY is set. Added first in code
-    # so it sits innermost: requests reach it already carrying a correlation id, and its
-    # 401s flow back out through the correlation (X-Request-ID) and CORS layers.
+    # Rate limiting (VA-17), on when RATE_LIMIT_PER_MINUTE > 0. Added first in code so it
+    # sits innermost — inside auth — and buckets by the *validated* subject (per key),
+    # falling back to the client IP when auth is off.
+    install_rate_limiting(app, app_settings)
+
+    # Bearer-JWT authentication (VA-15), on when JWT_SECRET_KEY is set. Requests reach it
+    # already carrying a correlation id, and its 401s flow back out through the correlation
+    # (X-Request-ID) and CORS layers.
     install_auth(app, app_settings)
 
     # Consistent problem-shaped errors + correlation ids on every response (VA-28).

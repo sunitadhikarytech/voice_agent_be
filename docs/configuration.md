@@ -88,6 +88,13 @@ tests and the evaluation harness use by default).
 | --- | --- | --- |
 | `ALLOWED_ORIGINS` | *(empty)* | Comma-separated origins allowed to call the API from a browser (e.g. `https://app.example.com,https://staging.example.com`). Empty ⇒ **no cross-origin access** — the deny-by-default posture. Origins must include their scheme; wildcards are rejected at startup. The `/ui` dashboard is served same-origin and needs no entry |
 
+## Rate limiting (VA-17)
+
+| Env var | Default | Notes |
+| --- | --- | --- |
+| `RATE_LIMIT_PER_MINUTE` | `0` | Token-bucket refill rate applied to everything under `API_PREFIX`, bucketed **per API key** (validated JWT `sub`) or **per client IP** when auth is off. `0` ⇒ limiting off (the local default). Exhausted buckets get a problem-shaped `429` with `Retry-After`; successful responses carry `X-RateLimit-Limit`/`X-RateLimit-Remaining` |
+| `RATE_LIMIT_BURST` | `0` | Bucket capacity (instantaneous burst). `0` ⇒ same as the per-minute rate. The store is in-memory per instance — Cloud Run session affinity (VA-05) pins a client to one instance |
+
 ## Required outside `local`
 
 When `ENVIRONMENT` is `dev` or `prod`, the keys in `REQUIRED_IN_CLOUD` must be set or the

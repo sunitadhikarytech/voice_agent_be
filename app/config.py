@@ -119,6 +119,13 @@ class Settings(BaseSettings):
     # auth middleware in VA-15 and sourced from Secret Manager in VA-14.
     jwt_secret_key: SecretStr = Field(default=SecretStr(""))
 
+    # Rate limiting (VA-17). Token bucket per authenticated subject (or client IP when auth
+    # is off) across everything under the API prefix. 0 (the default) disables limiting —
+    # local/offline development is unthrottled; deployments opt in. Burst is the bucket
+    # capacity; 0 means "same as the per-minute rate".
+    rate_limit_per_minute: int = Field(default=0, ge=0)
+    rate_limit_burst: int = Field(default=0, ge=0)
+
     # CORS lockdown (VA-16). Comma-separated origins allowed to call the API from a browser
     # (e.g. "https://app.example.com,https://staging.example.com"). Empty — the default —
     # means no cross-origin access at all; the reference dashboard is served same-origin at
@@ -206,6 +213,7 @@ class Settings(BaseSettings):
             # setting the key is what enables bearer-JWT auth (VA-15)
             "auth_enabled": _is_set(self.jwt_secret_key),
             "allowed_origins": list(self.allowed_origins),
+            "rate_limit_per_minute": self.rate_limit_per_minute,  # 0 = off (VA-17)
         }
 
 

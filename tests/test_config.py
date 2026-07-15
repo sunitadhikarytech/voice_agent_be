@@ -111,6 +111,7 @@ def test_public_dict_redacts_secret_but_reports_presence():
         "jwt_secret_key_configured",
         "auth_enabled",  # VA-15 — derived: the secret being set enables auth
         "allowed_origins",  # VA-16 — origins are configuration, not a secret
+        "rate_limit_per_minute",  # VA-17 — 0 = off
     }
 
     with_secret = build(jwt_secret_key="topsecret-0123456789abcdef-0123456789abcdef").public_dict()
