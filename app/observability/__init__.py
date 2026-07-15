@@ -8,6 +8,7 @@ from app.observability.logging import (
     session_id_var,
     tenant_id_var,
 )
+from app.observability.counters import EventCounters
 from app.observability.metrics import LatencyMetrics, percentile
 from app.observability.usage import UsageMetrics, audio_seconds
 
@@ -23,4 +24,5 @@ __all__ = [
     "percentile",
     "UsageMetrics",
     "audio_seconds",
+    "EventCounters",
 ]
