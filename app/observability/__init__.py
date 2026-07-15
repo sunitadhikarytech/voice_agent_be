@@ -8,6 +8,7 @@ from app.observability.logging import (
     session_id_var,
     tenant_id_var,
 )
+from app.observability.metrics import LatencyMetrics, percentile
 
 __all__ = [
     "JsonFormatter",
@@ -17,4 +18,6 @@ __all__ = [
     "correlation_id_var",
     "session_id_var",
     "tenant_id_var",
+    "LatencyMetrics",
+    "percentile",
 ]

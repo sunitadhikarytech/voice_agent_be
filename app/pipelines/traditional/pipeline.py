@@ -19,7 +19,7 @@ from typing import AsyncIterator, Callable
 from app.context import ground_llm
 from app.context.loader import DocumentContext
 from app.dispatch import Architecture
-from app.observability import bind_log_context
+from app.observability import LatencyMetrics, bind_log_context
 from app.pipelines.base import BasePipeline
 from app.providers.base import LlmProvider, SttProvider, TranscriptChunk, TtsProvider
 from app.session import ConversationMemory, SessionStore, TurnState, TurnStateMachine
@@ -56,6 +56,7 @@ class TraditionalPipeline(BasePipeline):
         memory: ConversationMemory | None = None,
         tools: ToolRegistry | None = None,
         document: DocumentContext | None = None,
+        metrics: LatencyMetrics | None = None,
         state_factory: Callable[[], TurnStateMachine] = TurnStateMachine,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -66,6 +67,7 @@ class TraditionalPipeline(BasePipeline):
         # None check so an injected (empty) store isn't silently replaced.
         self._sessions = session_store if session_store is not None else SessionStore()
         self._memory = memory or ConversationMemory()
+        self._metrics = metrics
         self._state_factory = state_factory
         self._clock = clock
 
@@ -125,6 +127,8 @@ class TraditionalPipeline(BasePipeline):
             latency["first_audio_ms"] = first_audio
 
         state.transition(TurnState.IDLE)
+        if self._metrics is not None:
+            self._metrics.record(self.architecture.value, latency)
         logger.info("traditional turn complete", extra={"latency_ms": latency})
         yield Done(session_id=session.session_id, latency_ms=latency)
 
