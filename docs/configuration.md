@@ -80,7 +80,7 @@ tests and the evaluation harness use by default).
 
 | Env var | Default | Notes |
 | --- | --- | --- |
-| `JWT_SECRET_KEY` | *(empty)* | **Secret. Required in `dev`/`prod`** (see below); optional in `local` |
+| `JWT_SECRET_KEY` | *(empty)* | **Secret. Required in `dev`/`prod`** (see below); optional in `local`. Must be **≥ 32 bytes** (RFC 7518 §3.2 — generate with `openssl rand -hex 32`) or startup fails. **Setting it enables bearer-JWT auth**: every request under `API_PREFIX` must send `Authorization: Bearer <jwt>` — HS256-signed with this secret and carrying `sub`, `tenant`, and `exp` claims. The validated `tenant` scopes sessions and usage metering. `/healthz`, `/`, the docs, and `/ui` stay public. Empty ⇒ API open, `default` tenant |
 
 ## CORS (VA-16)
 
@@ -100,7 +100,8 @@ change. Locally, missing secrets simply disable the features that need them.
 ```bash
 curl http://localhost:8080/api/v1/config
 # {"app_name":"voice-ai-agent","environment":"local","port":8080,"log_level":"INFO",
-#  "api_prefix":"/api/v1","jwt_secret_key_configured":false,"allowed_origins":[]}
+#  "api_prefix":"/api/v1","jwt_secret_key_configured":false,"auth_enabled":false,
+#  "allowed_origins":[]}
 ```
 
 Secret **values** are never returned — only a configured/not-configured boolean.

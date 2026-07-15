@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.voice import router as voice_router
+from app.auth import install_auth
 from app.config import Settings, get_settings
 from app.context import load_document
 from app.errors import ERROR_RESPONSES, install_error_handling
@@ -75,6 +76,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         usage=app.state.usage,
         counters=app.state.counters,
     )
+
+    # Bearer-JWT authentication (VA-15), on when JWT_SECRET_KEY is set. Added first in code
+    # so it sits innermost: requests reach it already carrying a correlation id, and its
+    # 401s flow back out through the correlation (X-Request-ID) and CORS layers.
+    install_auth(app, app_settings)
 
     # Consistent problem-shaped errors + correlation ids on every response (VA-28).
     install_error_handling(app)

@@ -38,6 +38,7 @@ class Problem(BaseModel):
 
 # Reusable OpenAPI documentation for the error responses (attached to routers/routes).
 ERROR_RESPONSES: dict[int | str, dict] = {
+    401: {"model": Problem, "description": "Missing or invalid bearer token (when auth is enabled)"},
     422: {"model": Problem, "description": "Validation error"},
     500: {"model": Problem, "description": "Internal server error"},
 }
@@ -47,17 +48,30 @@ def _correlation_id(request: Request) -> str:
     return getattr(request.state, "correlation_id", "unknown")
 
 
-def _problem(
-    status: int, title: str, detail: str | None, correlation_id: str, errors=None
+def problem_response(
+    status: int,
+    title: str,
+    detail: str | None,
+    correlation_id: str,
+    errors=None,
+    *,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
+    """Build a problem-shaped :class:`JSONResponse`. Public so middleware that must emit
+    errors directly (e.g. the auth middleware, VA-15) produces the same body as the
+    exception handlers."""
     body = Problem(
         status=status, title=title, detail=detail, correlation_id=correlation_id, errors=errors
     )
     return JSONResponse(
         status_code=status,
         content=body.model_dump(exclude_none=True),
-        headers={REQUEST_ID_HEADER: correlation_id},
+        headers={REQUEST_ID_HEADER: correlation_id, **(headers or {})},
     )
+
+
+# Internal alias kept for the handlers below.
+_problem = problem_response
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
