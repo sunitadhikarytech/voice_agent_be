@@ -32,6 +32,7 @@ WORKDIR /app
 
 COPY --from=builder /opt/venv /opt/venv
 COPY app ./app
+COPY frontend ./frontend
 
 USER appuser
 EXPOSE 8080

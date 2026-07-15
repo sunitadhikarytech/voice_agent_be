@@ -9,9 +9,11 @@ tickets.
 """
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.staticfiles import StaticFiles
 
 from app.api.voice import router as voice_router
 from app.config import Settings, get_settings
@@ -124,6 +126,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["voice"],
         responses=ERROR_RESPONSES,
     )
+
+    # Reference dashboard (VA-51..56), served same-origin at /ui when the assets are present.
+    if os.path.isdir("frontend"):
+        app.mount("/ui", StaticFiles(directory="frontend", html=True), name="ui")
 
     return app
 
