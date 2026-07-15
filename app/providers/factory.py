@@ -61,6 +61,20 @@ def _build_openai_realtime(settings: "Settings") -> RealtimeProvider:
     return OpenAIRealtime.from_settings(settings)
 
 
+def _build_gemini_live(settings: "Settings") -> RealtimeProvider:
+    # Lazy import so `google-genai` only loads when a live provider is actually built.
+    from app.providers.gemini_live import GeminiLive
+
+    return GeminiLive.from_settings(settings)
+
+
+def _build_grok_realtime(settings: "Settings") -> RealtimeProvider:
+    # Lazy import so `websockets` only loads when a realtime provider is actually built.
+    from app.providers.grok_realtime import GrokRealtime
+
+    return GrokRealtime.from_settings(settings)
+
+
 # Constructors receive the app Settings, so adapters can read their model/keys from config.
 _STT: dict[str, Callable[["Settings"], SttProvider]] = {
     "mock": lambda _s: MockStt(),
@@ -79,6 +93,8 @@ _TTS: dict[str, Callable[["Settings"], TtsProvider]] = {
 _RT: dict[str, Callable[["Settings"], RealtimeProvider]] = {
     "mock": lambda _s: MockRealtime(),
     "openai": _build_openai_realtime,
+    "gemini-live": _build_gemini_live,  # alternate realtime (VA-50)
+    "grok": _build_grok_realtime,  # alternate realtime (VA-50)
 }
 
 

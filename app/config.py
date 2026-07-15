@@ -117,6 +117,17 @@ class Settings(BaseSettings):
     # traditional pipeline instead of surfacing an error. False = fail fast.
     realtime_fallback_enabled: bool = Field(default=True)
 
+    # Alternate realtime providers (VA-50).
+    # Gemini Live reuses google_api_key; its own model/voice select the live variant.
+    gemini_live_model: str = Field(default="gemini-2.0-flash-live-001")
+    gemini_live_voice: str = Field(default="Puck")
+    # xAI Grok Voice speaks the OpenAI-compatible realtime protocol; endpoint + model are
+    # config so tracking xAI's rollout is a config change.
+    xai_api_key: SecretStr = Field(default=SecretStr(""))
+    grok_realtime_model: str = Field(default="grok-voice")
+    grok_voice: str = Field(default="ara")
+    grok_realtime_url: str = Field(default="wss://api.x.ai/v1/realtime")
+
     # Full-document grounding (VA-35). The whole source document is the context — no RAG.
     # Empty locally (grounding off); when set, the file must exist and fit the window.
     source_doc_path: str = Field(default="")
