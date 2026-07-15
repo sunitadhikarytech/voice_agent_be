@@ -12,25 +12,47 @@ from app.providers.deepgram_stt import DeepgramStt, SttConnectionError, parse_me
 # --- fake transport ---------------------------------------------------------------------
 
 class FakeConn:
-    """Yields scripted JSON messages; optionally 'drops' after N messages."""
+    """Scripted Deepgram connection.
 
-    def __init__(self, messages, *, drop_after=None):
+    - ``send`` genuinely suspends (so background sender tasks really run) and can be
+      scripted to fail on the Nth call via ``fail_send_at``.
+    - after the scripted messages are exhausted the receive side either ends
+      (StopAsyncIteration), blocks until ``stop_when(self)`` turns true, or blocks forever.
+    - ``drop_after`` simulates a receive-side connection drop after N messages.
+    """
+
+    def __init__(self, messages, *, drop_after=None, fail_send_at=None, stop_when=None,
+                 block_forever=False):
         self._messages = list(messages)
         self._drop_after = drop_after
+        self._fail_send_at = fail_send_at
+        self._stop_when = stop_when
+        self._block_forever = block_forever
         self.sent: list = []
         self.closed = False
         self._i = 0
+        self._sends = 0
 
     async def send(self, data):
+        await asyncio.sleep(0)  # a real socket send suspends; critical for task interleaving
+        self._sends += 1
+        if self._fail_send_at is not None and self._sends >= self._fail_send_at:
+            raise ConnectionError("simulated send failure")
         self.sent.append(data)
 
     def __aiter__(self):
         return self
 
     async def __anext__(self):
+        await asyncio.sleep(0)
         if self._drop_after is not None and self._i >= self._drop_after:
             raise ConnectionError("simulated drop")
         if self._i >= len(self._messages):
+            if self._block_forever:
+                await asyncio.Event().wait()  # never set: receive side hangs
+            if self._stop_when is not None:
+                while not self._stop_when(self):
+                    await asyncio.sleep(0)
             raise StopAsyncIteration
         msg = self._messages[self._i]
         self._i += 1
@@ -72,6 +94,11 @@ async def _collect(agen):
     return [item async for item in agen]
 
 
+def _sent_audio(conn: FakeConn) -> list[bytes]:
+    """The raw audio chunks sent on a connection (excludes the CloseStream control frame)."""
+    return [s for s in conn.sent if isinstance(s, (bytes, bytearray))]
+
+
 # --- message parsing --------------------------------------------------------------------
 
 def test_parse_partial_final_and_end_of_turn():
@@ -98,7 +125,9 @@ def test_conforms_to_interface():
 
 def test_happy_path_yields_partial_then_final_and_sends_close():
     conn = FakeConn(
-        [results("hello", is_final=False), results("hello world", is_final=True, speech_final=True)]
+        [results("hello", is_final=False), results("hello world", is_final=True, speech_final=True)],
+        # keep the receive side open until the sender has flushed the audio + CloseStream
+        stop_when=lambda c: any(isinstance(s, str) and "CloseStream" in s for s in c.sent),
     )
     stt = DeepgramStt(api_key="k", connect=connect_seq(conn))
     chunks = asyncio.run(_collect(stt.transcribe(_aiter([b"a", b"b"]))))
@@ -108,7 +137,7 @@ def test_happy_path_yields_partial_then_final_and_sends_close():
         ("hello world", True, True),
     ]
     assert conn.closed
-    assert b"a" in conn.sent and b"b" in conn.sent
+    assert _sent_audio(conn) == [b"a", b"b"]
     assert any(isinstance(s, str) and "CloseStream" in s for s in conn.sent)
 
 
@@ -122,6 +151,30 @@ def test_reconnects_mid_stream_and_continues():
 
     assert [c.text for c in chunks] == ["hel", "hello world"]
     assert dropped.closed and recovered.closed  # both connections cleaned up
+
+
+def test_reconnect_preserves_remaining_audio_after_send_failure():
+    """VA-31 follow-up regression: a mid-stream send failure must not finalize the shared
+    audio source. Only the in-flight chunk is lost; the remaining audio flows into the
+    reconnected session (previously the sender's cancellation killed the shared generator,
+    silently dropping the rest of the audio)."""
+    # conn1: receive side blocks forever; the first audio send fails mid-stream.
+    conn1 = FakeConn([], block_forever=True, fail_send_at=1)
+    # conn2: healthy; ends once it has received the remaining two audio chunks.
+    conn2 = FakeConn(
+        [results("m2 m3", is_final=True, speech_final=True)],
+        stop_when=lambda c: len(_sent_audio(c)) == 2,
+    )
+    stt = DeepgramStt(
+        api_key="k", connect=connect_seq(conn1, conn2), max_reconnects=2, backoff_base=0
+    )
+    chunks = asyncio.run(_collect(stt.transcribe(_aiter([b"m1", b"m2", b"m3"]))))
+
+    assert [c.text for c in chunks] == ["m2 m3"]
+    # m1 was lost in-flight on the failed socket; m2/m3 survived into the new session
+    assert _sent_audio(conn1) == []
+    assert _sent_audio(conn2) == [b"m2", b"m3"]
+    assert conn1.closed and conn2.closed
 
 
 def test_gives_up_after_max_reconnects():
