@@ -24,6 +24,21 @@ StreamFn = Callable[..., AsyncIterator[str]]
 CreateCacheFn = Callable[[str], Awaitable[str]]
 
 
+def as_gemini_tools(declarations: Sequence[Any] | None):
+    """Wrap plain function-declaration dicts (the ToolRegistry shape, VA-38) into the SDK's
+    ``Tool(function_declarations=[...])`` form.
+
+    google-genai 2.x validates ``GenerateContentConfig.tools`` strictly: a bare declaration
+    dict is rejected with ``extra_forbidden`` (found live, 2026-07-16) — the SDK only accepts
+    ``types.Tool`` objects (or callables). Returns ``None`` when there are no tools.
+    """
+    if not declarations:
+        return None
+    from google.genai import types
+
+    return [types.Tool(function_declarations=list(declarations))]
+
+
 class GeminiLlm:
     """LlmProvider backed by Gemini (Flash-tier), with cached full-document grounding."""
 
@@ -111,7 +126,7 @@ class GeminiLlm:
         config = types.GenerateContentConfig(
             # When cached, the system instruction + document already live in the cache.
             system_instruction=None if cache_ref else system,
-            tools=tools or None,
+            tools=as_gemini_tools(tools),
             cached_content=cache_ref,
         )
         response = await client.aio.models.generate_content_stream(

@@ -125,3 +125,40 @@ def test_from_settings_reads_config():
     assert llm._model == "gemini-2.0-flash"
     assert llm.system_prompt == "from-config"
     assert llm._enable_caching is False
+
+
+# --- SDK tool wrapping (VA-34 follow-up, found live) --------------------------------------------
+
+def test_registry_declarations_wrap_into_sdk_tools():
+    # google-genai 2.x rejects bare declaration dicts (extra_forbidden); they must be
+    # wrapped as Tool(function_declarations=[...]). This is the live-failure regression.
+    from app.providers.gemini_llm import as_gemini_tools
+    from app.tools import default_registry
+
+    declarations = default_registry().declarations()
+    [tool] = as_gemini_tools(declarations)
+    assert tool.function_declarations[0].name == "book_appointment"
+    # the SDK accepted the coercion — parameters made it through as a schema
+    assert tool.function_declarations[0].parameters is not None
+
+
+def test_no_tools_means_none():
+    from app.providers.gemini_llm import as_gemini_tools
+
+    assert as_gemini_tools(None) is None
+    assert as_gemini_tools([]) is None
+
+
+def test_generate_content_config_accepts_the_wrapped_tools():
+    # the exact construction that failed live must now validate
+    from google.genai import types
+
+    from app.providers.gemini_llm import as_gemini_tools
+    from app.tools import default_registry
+
+    config = types.GenerateContentConfig(
+        system_instruction="sys",
+        tools=as_gemini_tools(default_registry().declarations()),
+        cached_content=None,
+    )
+    assert config.tools is not None
