@@ -155,6 +155,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         responses=ERROR_RESPONSES,
     )
 
+    # Telephony (VA-72/74): inbound Twilio calls. Mounted at the top level (no api_prefix) so
+    # Twilio's unauthenticated webhook + media socket are reachable; enabled by config.
+    if app_settings.telephony_enabled:
+        from app.telephony.router import router as telephony_router
+
+        app.include_router(telephony_router, tags=["telephony"])
+
     # Reference dashboard (VA-51..56), served same-origin at /ui when the assets are present.
     if os.path.isdir("frontend"):
         app.mount("/ui", StaticFiles(directory="frontend", html=True), name="ui")

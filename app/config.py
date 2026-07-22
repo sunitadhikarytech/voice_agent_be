@@ -117,6 +117,16 @@ class Settings(BaseSettings):
     # traditional pipeline instead of surfacing an error. False = fail fast.
     realtime_fallback_enabled: bool = Field(default=True)
 
+    # Telephony (VA-72/74): inbound phone calls via Twilio Media Streams. Off by default; the
+    # /telephony/* routes are mounted only when enabled. A live call also needs PUBLIC_BASE_URL
+    # (the https origin Twilio reaches — e.g. an ngrok URL or the Cloud Run URL) so the TwiML
+    # can point Twilio's media WebSocket back at this service. TWILIO_AUTH_TOKEN, when set,
+    # enables X-Twilio-Signature validation on the webhook.
+    telephony_enabled: bool = Field(default=False)
+    public_base_url: str = Field(default="")
+    twilio_auth_token: SecretStr = Field(default=SecretStr(""))
+    twilio_account_sid: str = Field(default="")
+
     # Alternate realtime providers (VA-50).
     # Gemini Live reuses google_api_key; its own model/voice select the live variant.
     gemini_live_model: str = Field(default="gemini-2.0-flash-live-001")
