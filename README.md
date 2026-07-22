@@ -21,7 +21,7 @@ Providers and pipelines sit behind small adapter interfaces, so swapping a vendo
 **configuration change, not a code change**.
 
 📖 **Docs:** [API reference](docs/api.md) · [Configuration](docs/configuration.md) ·
-[Architecture & design](docs/architecture.md)
+[Architecture & design](docs/architecture.md) · [Telephony](docs/telephony.md)
 
 ---
 
@@ -165,8 +165,10 @@ tests/            # offline test suite (mock providers), run in CI
 ## Status
 
 The application is functionally complete and verified live end-to-end (text → grounded Gemini
-answer → streamed Cartesia speech). Remaining work is cloud/ops infrastructure — GCP provisioning,
-CI/CD deploy, secret manager, alerting, and telephony (Twilio/Vapi) — tracked separately.
+answer → streamed Cartesia speech). **Inbound phone calls** work too — a Twilio Media Streams
+bridge (see [docs/telephony.md](docs/telephony.md)) turns a call into a grounded voice Q&A.
+Remaining work is cloud/ops infrastructure — GCP provisioning, CI/CD deploy, secret manager,
+alerting — plus outbound/Vapi telephony, tracked separately.
 
 ## Contributing
 

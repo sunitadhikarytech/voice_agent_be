@@ -36,6 +36,24 @@ class TwilioMediaStream:
         self.call_sid: str | None = None
         self.marks: list[str] = []
 
+    async def wait_for_start(self) -> bool:
+        """Read frames until Twilio's ``start`` (capturing ``streamSid``), so the agent knows
+        where to send audio before it speaks. Returns ``False`` if the call ends first."""
+        while self.stream_sid is None:
+            try:
+                raw = await self._ws.receive_text()
+            except (WebSocketDisconnect, RuntimeError):
+                return False
+            message = json.loads(raw)
+            if message.get("event") == "start":
+                start = message.get("start", {})
+                self.stream_sid = start.get("streamSid") or message.get("streamSid")
+                self.call_sid = start.get("callSid")
+                return True
+            if message.get("event") == "stop":
+                return False
+        return True
+
     async def inbound_audio(self) -> AsyncIterator[bytes]:
         """Yield caller audio as μ-law frames until the call stops or the socket closes.
 
