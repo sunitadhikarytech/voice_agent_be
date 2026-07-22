@@ -103,6 +103,8 @@ class DeepgramStt:
         connect: ConnectFn | None = None,
         max_reconnects: int = 2,
         backoff_base: float = 0.2,
+        encoding: str | None = None,
+        sample_rate: int | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
@@ -110,6 +112,11 @@ class DeepgramStt:
         self._connect = connect or self._default_connect
         self._max_reconnects = max_reconnects
         self._backoff_base = backoff_base
+        # Explicit input encoding (VA-72): telephony sends raw μ-law 8 kHz, which Deepgram
+        # only decodes when told — ``encoding=mulaw&sample_rate=8000``. Left unset for the
+        # browser path, where Deepgram auto-detects the WebM/Opus container.
+        self._encoding = encoding
+        self._sample_rate = sample_rate
 
     @classmethod
     def from_settings(cls, settings) -> "DeepgramStt":
@@ -118,14 +125,19 @@ class DeepgramStt:
             model=settings.deepgram_model,
         )
 
+    def _connect_query(self) -> str:
+        query = f"?model={self._model}&interim_results=true&punctuate=true&smart_format=true"
+        if self._encoding:  # telephony: raw μ-law needs an explicit encoding + rate
+            query += f"&encoding={self._encoding}"
+            if self._sample_rate:
+                query += f"&sample_rate={self._sample_rate}"
+        return query
+
     async def _default_connect(self) -> Connection:
         import websockets
 
-        query = "?model={}&interim_results=true&punctuate=true&smart_format=true".format(
-            self._model
-        )
         return await websockets.connect(
-            self._url + query,
+            self._url + self._connect_query(),
             additional_headers={"Authorization": f"Token {self._api_key}"},
         )
 
