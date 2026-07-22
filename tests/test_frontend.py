@@ -1,4 +1,8 @@
-"""VA-51..56 — the reference dashboard is served and self-contained."""
+"""VA-51..56 — the VANI browser client is served and self-contained.
+
+The frontend is maintained in its own repo (sunitadhikarytech/FE) and vendored here so the
+backend serves it same-origin at /ui (no CORS). Its API_BASE defaults to the current origin.
+"""
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -21,8 +25,14 @@ def test_assets_exist():
 def test_dashboard_is_served_at_ui():
     resp = _client().get("/ui/")
     assert resp.status_code == 200
-    assert "Voice AI Agent" in resp.text
+    assert "VANI" in resp.text
     assert "text/html" in resp.headers["content-type"]
+
+
+def test_client_targets_same_origin_by_default():
+    # served from the backend, the client must call the same origin (no CORS needed)
+    resp = _client().get("/ui/")
+    assert "location.origin" in resp.text and "/api/v1" in resp.text
 
 
 def test_app_js_is_served():
