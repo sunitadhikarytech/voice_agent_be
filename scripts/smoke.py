@@ -122,7 +122,7 @@ def run_checks(client) -> list[tuple[str, bool, str]]:
     check("GET /openapi.json → 200", r.status == 200, f"status={r.status}")
 
     r = client.get("/ui/")
-    check("GET /ui/ → dashboard", r.status == 200 and "Voice AI Agent" in r.text, f"status={r.status}")
+    check("GET /ui/ → dashboard", r.status == 200 and "VANI" in r.text, f"status={r.status}")
 
     return results
 
