@@ -61,6 +61,13 @@ tests and the evaluation harness use by default).
 | `GEMINI_SYSTEM_PROMPT` | *(built-in)* | Base system prompt; grounding instructions are layered on top |
 | `GEMINI_ENABLE_PROMPT_CACHING` | `true` | Cache the full document as Gemini cached content so repeat turns aren't re-billed for the large context |
 
+## Groq LLM (alternate, fast)
+
+| Env var | Default | Notes |
+| --- | --- | --- |
+| `GROQ_API_KEY` | *(empty)* | **Secret.** Required when `LLM_PROVIDER=groq`. Free key at console.groq.com |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | OpenAI-compatible; **128k context** (can't inline the full ~213k-token document like Gemini — see `app/providers/groq_llm.py`) |
+
 ## Cartesia TTS (VA-43)
 
 | Env var | Default | Notes |

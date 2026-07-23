@@ -40,6 +40,13 @@ def _build_gemini_llm(settings: "Settings") -> LlmProvider:
     return GeminiLlm.from_settings(settings)
 
 
+def _build_groq_llm(settings: "Settings") -> LlmProvider:
+    # Lazy import so `httpx` streaming only loads when a Groq provider is actually built.
+    from app.providers.groq_llm import GroqLlm
+
+    return GroqLlm.from_settings(settings)
+
+
 def _build_cartesia_tts(settings: "Settings") -> TtsProvider:
     # Lazy import so `websockets` only loads when a Cartesia provider is actually built.
     from app.providers.cartesia_tts import CartesiaTts
@@ -84,6 +91,7 @@ _STT: dict[str, Callable[["Settings"], SttProvider]] = {
 _LLM: dict[str, Callable[["Settings"], LlmProvider]] = {
     "mock": lambda _s: MockLlm(),
     "gemini": _build_gemini_llm,
+    "groq": _build_groq_llm,  # fast OpenAI-compatible alternate LLM (VA-34 alt)
 }
 _TTS: dict[str, Callable[["Settings"], TtsProvider]] = {
     "mock": lambda _s: MockTts(),
