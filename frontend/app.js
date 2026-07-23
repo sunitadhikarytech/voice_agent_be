@@ -46,11 +46,15 @@
     })
   );
   document.querySelectorAll(".pill").forEach((p) =>
-    p.addEventListener("click", () => { if (state === "idle") sendTurn({ kind: "text", text: p.dataset.q }, "slow"); })
+    p.addEventListener("click", () => {
+      ensureAudio();  // unlock audio inside the gesture so the reply is audible
+      if (state === "idle") sendTurn({ kind: "text", text: p.dataset.q }, "slow");
+    })
   );
 
   // ---------- the one control: the mic ----------
   mic.addEventListener("click", () => {
+    ensureAudio();  // unlock/resume audio inside the user gesture (autoplay policy)
     if (state === "idle") startListening();
     else if (state === "listening") stopListening(true);
     else if (state === "speaking") { stopPlayback(); startListening(); }   // barge-in
@@ -157,9 +161,18 @@
   }
 
   // ---------- PCM16 @ 24kHz streaming playback ----------
-  let ctx = null, playHead = 0;
+  // One long-lived AudioContext, created + resumed inside a user gesture (ensureAudio) so
+  // Chrome's autoplay policy can't leave it suspended and silent. Never closed (closing then
+  // re-creating outside a gesture is what caused "no sound"); barge-in stops the live nodes.
+  let ctx = null, playHead = 0, sources = [];
+  function ensureAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!ctx) { ctx = new AC(); playHead = 0; }
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    return ctx;
+  }
   function playPcm(b64) {
-    if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); playHead = 0; }
+    ensureAudio();
     const bin = atob(b64), n = bin.length >> 1;
     if (!n) return;
     const buf = ctx.createBuffer(1, n, 24000), ch = buf.getChannelData(0);
@@ -172,9 +185,13 @@
     node.buffer = buf; node.connect(ctx.destination);
     const t = Math.max(ctx.currentTime, playHead);
     node.start(t); playHead = t + buf.duration;
+    sources.push(node);
+    node.onended = () => { sources = sources.filter((s) => s !== node); };
   }
   function stopPlayback() {
-    if (ctx) { ctx.close().catch(() => {}); ctx = null; playHead = 0; }
+    sources.forEach((s) => { try { s.stop(); } catch {} });
+    sources = [];
+    if (ctx) playHead = ctx.currentTime;
   }
   function finishWhenPlaybackEnds(played) {
     if (!played || !ctx) { if (!played) flashError(); else setState("idle"); return; }
