@@ -1,141 +1,153 @@
-/* VANI frontend — talks to the Voice AI Agent backend.
-   Text (pills) → grounded /voice/slow. Hold-to-talk → /voice/{slow|fast} with mic audio.
-   Streams SSE (transcript.final → answer.delta → audio.chunk → done) and plays PCM16@24kHz. */
+/* VANI — a voice-only interface. Speak in, hear the answer; no text is ever shown.
+   Tap the mic → it listens (green, reacting to your voice) → auto-stops on silence →
+   streams the answer from /voice/{slow|fast} and plays it (teal) → idle.
+   Grounded uses /voice/slow, Realtime uses /voice/fast; both are SSE. Only audio.chunk
+   events are used — transcript/answer text events are deliberately ignored. */
 (() => {
   "use strict";
-  const API = (window.API_BASE || "http://127.0.0.1:8080/api/v1").replace(/\/$/, "");
+  const API = (window.API_BASE || location.origin + "/api/v1").replace(/\/$/, "");
   const ORIGIN = API.replace(/\/api\/v1$/, "");
-
   const $ = (id) => document.getElementById(id);
-  const hero = $("hero"), convo = $("convo"), thread = $("thread"), statusEl = $("status");
-  const talk = $("talk"), talkLabel = $("talkLabel"), conn = $("conn"), scrollCue = $("scrollCue");
-  let mode = "slow", busy = false;
+  const mic = $("mic");
 
-  // ---------- connection indicator ----------
+  const SPEECH_RMS = 0.025;     // above this = voice present
+  const SILENCE_MS = 1400;      // auto-stop after this much quiet (once you've spoken)
+  const NO_SPEECH_MS = 7000;    // give up if nothing is said
+  const MAX_LISTEN_MS = 20000;  // hard cap
+
+  let mode = "slow";
+  let state = "idle";           // idle | listening | thinking | speaking
+  let recorder = null, chunks = [], micStream = null;
+  let vadCtx = null, rafId = 0;
+
+  function setState(s) {
+    state = s;
+    document.body.className = "is-" + s;
+  }
+  function flashError() {
+    document.body.className = "is-error";
+    setTimeout(() => { if (state === "idle") document.body.className = "is-idle"; }, 700);
+    setTimeout(() => setState("idle"), 700);
+  }
+
+  // ---------- connection dot (visual only) ----------
   (async function ping() {
     try {
       const r = await fetch(`${ORIGIN}/healthz`, { cache: "no-store" });
-      const ok = r.ok && (await r.json()).ok;
-      conn.textContent = ok ? "online" : "offline";
-      conn.classList.toggle("online", !!ok);
-    } catch {
-      conn.textContent = "offline (start the backend on :8080)";
-    }
+      $("conn").classList.toggle("online", r.ok && (await r.json()).ok);
+    } catch { /* stays offline-red */ }
   })();
 
-  // ---------- mode toggle ----------
+  // ---------- controls ----------
   document.querySelectorAll(".mode-btn").forEach((b) =>
     b.addEventListener("click", () => {
       document.querySelectorAll(".mode-btn").forEach((x) => x.classList.remove("is-active"));
-      b.classList.add("is-active");
-      mode = b.dataset.mode;
+      b.classList.add("is-active"); mode = b.dataset.mode;
     })
   );
-
-  // ---------- suggestion pills (text → grounded) ----------
   document.querySelectorAll(".pill").forEach((p) =>
-    p.addEventListener("click", () => runText(p.dataset.q))
+    p.addEventListener("click", () => { if (state === "idle") sendTurn({ kind: "text", text: p.dataset.q }, "slow"); })
   );
 
-  $("scrollCue").addEventListener("click", () =>
-    convo.scrollIntoView({ behavior: "smooth" })
-  );
-  $("reset").addEventListener("click", () => {
-    thread.innerHTML = "";
-    convo.hidden = true;
-    hero.scrollIntoView({ behavior: "smooth" });
+  // ---------- the one control: the mic ----------
+  mic.addEventListener("click", () => {
+    if (state === "idle") startListening();
+    else if (state === "listening") stopListening(true);
+    else if (state === "speaking") { stopPlayback(); startListening(); }   // barge-in
+    // thinking: ignore (busy)
   });
 
-  // ---------- hold to talk ----------
-  let recorder, chunks = [];
-  const press = async (e) => {
-    e.preventDefault();
-    if (busy) { stopPlayback(); }            // barge-in: talking over the reply cuts it off
+  async function startListening() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recorder = new MediaRecorder(stream, pickMime());
-      chunks = [];
-      recorder.ondataavailable = (ev) => ev.data.size && chunks.push(ev.data);
-      recorder.start();
-      document.body.classList.add("is-listening");
-      talkLabel.textContent = "LISTENING…";
-    } catch {
-      talkLabel.textContent = "MIC BLOCKED";
-    }
-  };
-  const release = async (e) => {
-    e.preventDefault();
-    if (!recorder || recorder.state === "inactive") return;
-    const done = new Promise((res) => (recorder.onstop = res));
-    recorder.stop();
-    await done;
-    recorder.stream.getTracks().forEach((t) => t.stop());
-    document.body.classList.remove("is-listening");
-    talkLabel.innerHTML = "HOLD&nbsp;TO&nbsp;TALK";
-    if (!chunks.length) return;
-    const b64 = await blobToB64(new Blob(chunks, { type: "audio/webm" }));
-    runTurn({ kind: "audio", audio_b64: b64 }, mode);
-  };
-  talk.addEventListener("pointerdown", press);
-  talk.addEventListener("pointerup", release);
-  talk.addEventListener("pointerleave", release);
-
-  function pickMime() {
-    for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]) {
-      if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return { mimeType: m };
-    }
-    return {};
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch { flashError(); return; }
+    chunks = [];
+    recorder = new MediaRecorder(micStream, pickMime());
+    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    recorder.start();
+    setState("listening");
+    runVad(micStream);
   }
 
-  // ---------- turns ----------
-  function runText(text) { runTurn({ kind: "text", text }, "slow"); }
+  function stopListening(send) {
+    cancelAnimationFrame(rafId);
+    document.documentElement.style.setProperty("--level", 0);
+    if (vadCtx) { vadCtx.close().catch(() => {}); vadCtx = null; }
+    if (recorder && recorder.state !== "inactive") {
+      recorder.onstop = async () => {
+        micStream && micStream.getTracks().forEach((t) => t.stop());
+        if (!send || !chunks.length) { setState("idle"); return; }
+        setState("thinking");
+        const b64 = await blobToB64(new Blob(chunks, { type: "audio/webm" }));
+        sendTurn({ kind: "audio", audio_b64: b64 }, mode);
+      };
+      recorder.stop();
+    } else if (send) { setState("thinking"); }
+  }
 
-  async function runTurn(input, ep) {
-    if (busy) return;
-    busy = true;
-    reveal();
-    const youText = input.kind === "text" ? input.text : "…";
-    const you = addTurn("you", "YOU", youText);
-    const vani = addTurn("vani", "VANI", "");
-    setStatus("thinking");
-    try {
-      const resp = await fetch(`${API}/voice/${ep}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input }),
-      });
-      if (!resp.ok || !resp.body) {
-        vani.q.textContent = `— error ${resp.status} (is the backend running + CORS allowing this origin?)`;
+  // ---------- voice-activity detection: reactive level + silence auto-stop ----------
+  function runVad(stream) {
+    vadCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = vadCtx.createMediaStreamSource(stream);
+    const analyser = vadCtx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    const buf = new Uint8Array(analyser.fftSize);
+    const started = performance.now();
+    let lastVoice = 0, spoke = false, smooth = 0;
+
+    (function loop() {
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const x = (buf[i] - 128) / 128; sum += x * x; }
+      const rms = Math.sqrt(sum / buf.length);
+      smooth = smooth * 0.8 + rms * 0.2;
+      document.documentElement.style.setProperty("--level", Math.min(1, smooth * 9).toFixed(3));
+
+      const now = performance.now();
+      if (rms > SPEECH_RMS) { spoke = true; lastVoice = now; }
+      const elapsed = now - started;
+      const quietFor = now - lastVoice;
+      if ((spoke && quietFor > SILENCE_MS) || (!spoke && elapsed > NO_SPEECH_MS) || elapsed > MAX_LISTEN_MS) {
+        stopListening(spoke);   // only send if the caller actually spoke
         return;
       }
-      const reader = resp.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "", answer = "";
+      rafId = requestAnimationFrame(loop);
+    })();
+  }
+
+  // ---------- one turn: stream audio back, play it, no text ----------
+  async function sendTurn(input, ep) {
+    setState("thinking");
+    let played = false;
+    try {
+      const resp = await fetch(`${API}/voice/${ep}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input }),
+      });
+      if (!resp.ok || !resp.body) { flashError(); return; }
+      const reader = resp.body.getReader(), dec = new TextDecoder();
+      let sseBuf = "";
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-        buf += dec.decode(value, { stream: true });
+        sseBuf += dec.decode(value, { stream: true });
         let i;
-        while ((i = buf.indexOf("\n\n")) >= 0) {
-          const frame = buf.slice(0, i); buf = buf.slice(i + 2);
-          const { event, data } = parseFrame(frame);
-          if (!event) continue;
-          if (event === "transcript.final" && input.kind === "audio") you.q.textContent = data.text;
-          else if (event === "answer.delta") { answer += data.text; vani.q.textContent = answer; }
-          else if (event === "audio.chunk") { setStatus("speaking"); playPcm(data.audio_b64); }
-          else if (event === "done") { /* end */ }
+        while ((i = sseBuf.indexOf("\n\n")) >= 0) {
+          const frame = sseBuf.slice(0, i); sseBuf = sseBuf.slice(i + 2);
+          const ev = parseEvent(frame);
+          if (ev.event === "audio.chunk" && ev.data.audio_b64) {
+            if (!played) { played = true; setState("speaking"); }
+            playPcm(ev.data.audio_b64);
+          }
+          // transcript.final / answer.delta / done: intentionally ignored — voice only
         }
       }
-      if (!answer && input.kind !== "audio") vani.q.textContent = "(no answer — check the LLM key)";
-    } catch (err) {
-      vani.q.textContent = "— network error reaching the backend";
-    } finally {
-      setStatus("idle");
-      busy = false;
-    }
+    } catch { flashError(); return; }
+    finishWhenPlaybackEnds(played);
   }
 
-  function parseFrame(frame) {
+  function parseEvent(frame) {
     let event = null, data = {};
     for (const line of frame.split("\n")) {
       if (line.startsWith("event:")) event = line.slice(6).trim();
@@ -144,28 +156,7 @@
     return { event, data };
   }
 
-  // ---------- UI helpers ----------
-  function reveal() {
-    if (convo.hidden) { convo.hidden = false; scrollCue.classList.add("hidden"); }
-    convo.scrollIntoView({ behavior: "smooth" });
-  }
-  function addTurn(kind, who, text) {
-    const el = document.createElement("div");
-    el.className = `turn ${kind}`;
-    el.innerHTML = `<span class="who"></span><div class="bubble"></div>`;
-    el.querySelector(".who").textContent = who;
-    const q = el.querySelector(".bubble");
-    q.textContent = text;
-    thread.appendChild(el);
-    el.scrollIntoView({ behavior: "smooth", block: "end" });
-    return { el, q };
-  }
-  function setStatus(s) {
-    statusEl.textContent = s;
-    document.body.classList.toggle("is-speaking", s === "speaking");
-  }
-
-  // ---------- PCM16 @ 24kHz playback ----------
+  // ---------- PCM16 @ 24kHz streaming playback ----------
   let ctx = null, playHead = 0;
   function playPcm(b64) {
     if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); playHead = 0; }
@@ -177,18 +168,27 @@
       if (s >= 32768) s -= 65536;
       ch[i] = s / 32768;
     }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(ctx.destination);
+    const node = ctx.createBufferSource();
+    node.buffer = buf; node.connect(ctx.destination);
     const t = Math.max(ctx.currentTime, playHead);
-    src.start(t);
-    playHead = t + buf.duration;
+    node.start(t); playHead = t + buf.duration;
   }
   function stopPlayback() {
     if (ctx) { ctx.close().catch(() => {}); ctx = null; playHead = 0; }
-    document.body.classList.remove("is-speaking");
+  }
+  function finishWhenPlaybackEnds(played) {
+    if (!played || !ctx) { if (!played) flashError(); else setState("idle"); return; }
+    const remainingMs = Math.max(0, (playHead - ctx.currentTime) * 1000);
+    setTimeout(() => { stopPlayback(); setState("idle"); }, remainingMs + 150);
   }
 
+  // ---------- helpers ----------
+  function pickMime() {
+    for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return { mimeType: m };
+    }
+    return {};
+  }
   function blobToB64(blob) {
     return new Promise((res) => {
       const r = new FileReader();
