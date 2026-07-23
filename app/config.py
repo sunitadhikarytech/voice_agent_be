@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     # Gemini LLM (VA-34). Flash-tier model; key sourced from Secret Manager in VA-14.
     google_api_key: SecretStr = Field(default=SecretStr(""))
     gemini_model: str = Field(default="gemini-2.0-flash")
+
+    # Groq LLM (VA-34 alt) — fast, OpenAI-compatible; select with LLM_PROVIDER=groq. 128k
+    # context (can't inline the full document like Gemini's 1M — see app/providers/groq_llm.py).
+    groq_api_key: SecretStr = Field(default=SecretStr(""))
+    groq_model: str = Field(default="llama-3.3-70b-versatile")
     gemini_system_prompt: str = Field(
         default="You are a helpful voice assistant. Answer concisely and conversationally."
     )
